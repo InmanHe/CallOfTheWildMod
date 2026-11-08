@@ -1,0 +1,36 @@
+name: release
+# Publish a release on GitHub (any tag, e.g. v0.2.0) and this attaches the Windows build.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --release
+      - run: cargo build --release
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.event.release.tag_name }}") { "${{ github.event.release.tag_name }}" } else { "dev" }
+          New-Item -ItemType Directory -Force CotwMod/docs | Out-Null
+          Copy-Item target/release/CotwMod.exe, README.md, LICENSE, THIRD_PARTY.md CotwMod/
+          Copy-Item docs/*.md CotwMod/docs/
+          Compress-Archive -Path CotwMod -DestinationPath "CotwMod-$v-windows-x64.zip"
+      - name: Upload to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" (Get-ChildItem CotwMod-*.zip).FullName --clobber
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CotwMod-windows-x64
+          path: CotwMod-*.zip
