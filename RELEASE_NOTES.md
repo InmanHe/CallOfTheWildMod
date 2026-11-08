@@ -1,25 +1,21 @@
-# CotwMod v0.4.0
+# CotwMod v0.5.0
 
 ## 中文
 
-**彈道數據改為直接讀取你安裝的遊戲，並自動校準。**
+- **疊加層重寫**：改為原生 Win32 透明視窗（色鍵透明、滑鼠穿透、置頂），自動貼合遊戲畫面。修正舊版開啟疊加層後遊戲畫面被擋住的問題。只在遊戲處於前台時顯示。
+- **自動讀取遊戲解析度**：直接取用遊戲視窗的實際畫面大小，視窗大小或解析度改變時即時跟隨。
+- **手持武器自動識別精靈**：點「開始自動識別」，按提示切換幾次武器並按 Alt+F12。掃描、縮小範圍、指針掃描、綁定全部自動完成。如果內存中的 ID 是遊戲裝備哈希，會直接認出是哪把武器；否則每把武器只需「記住」一次。
+- **即時更新**：疊加層、熱鍵、手持武器追蹤移到獨立執行緒（約 30 次/秒），換武器即時生效，主視窗最小化也照常運作。
+- 新熱鍵 Alt+F12（自動識別時的「我已切換武器」）。
 
-- **自動讀取本機遊戲檔案（唯讀）**：啟動時自動找到遊戲資料夾（正在運行的遊戲、Steam 各遊戲庫、Epic，或手動填寫），從 `archives_win64` 讀出當前遊戲版本**所有**武器與彈藥的彈道數據，包括新 DLC 槍械。結果會快取，遊戲更新後自動重新讀取。內建數據只在讀取失敗時作為備用。
-- **動態自動校準**：每次啟動用當前遊戲版本全部武器的歸零表自動擬合引擎常數，不需要開槍，並自動剔除不一致的條目（目前：弓弩約 1.2 mrad RMS，槍械中位數約 0.5 mrad）。在靶場每記錄一發射擊，背景自動重新擬合。
-- 修正：名稱含連字號的武器調校檔（如 45-70 槓桿步槍）之前會被漏掉，現在共 116 把武器。
-
-**已驗證**：把提取出的遊戲檔案重新打包成真正的 TAB/ARC/AAF/SARC 容器，先用 deca 自身的讀取器逐檔核對，再讓 Windows 版程式在 Wine 下從中讀取：116 把武器、95 種彈藥、每個數值完全一致。程式也能透過正在運行的遊戲進程自動找到遊戲資料夾。**尚未在真實遊戲上運行過**；若讀取失敗，介面會顯示原因並改用內建數據。
-
-**使用**：解壓後執行 `CotwMod.exe`。遊戲設為無邊框視窗；內存功能需要時以系統管理員身分執行；修改種群前先退出遊戲。
+**已驗證（Windows 版在 Wine 下）**：疊加層透明顯示在模擬遊戲視窗上，並正確置中；解析度讀取正確；自動識別精靈 3 輪內找到手持武器並綁定指針鏈；在遊戲內換武器後約 1 秒，瞄具自動切換到新武器。**尚未在真實遊戲中運行過。**
 
 ## English
 
-**Ballistic data is now read from your installed game and calibrated automatically.**
+- **Overlay rewritten** as a native Win32 transparent window (colour-key transparency, click-through, topmost) fitted to the game view. Fixes the old overlay hiding the game. Shown only while the game is in front.
+- **Game resolution read automatically** from the game window and followed live when the window or resolution changes.
+- **Held-weapon auto-detection wizard**: click **Start detection**, then switch weapons a few times and press Alt+F12 when asked. Scanning, narrowing, pointer scan and binding are automatic. If the in-memory ID is a game equipment hash the weapon is recognised directly; otherwise each weapon is remembered once.
+- **Real-time updates**: overlay, hotkeys and held-weapon tracking run on their own thread (~30 Hz), so weapon switches apply immediately, even with the main window minimised.
+- New hotkey Alt+F12 ("I switched weapons" during detection).
 
-- **Reads your own game files (read-only)**: at start-up the game folder is found automatically (running game, every Steam library, Epic, or entered manually), and the ballistics of **every** weapon and ammo type in your game version are read from `archives_win64`, new DLC guns included. Results are cached and re-read after game updates. Built-in data is only a fallback.
-- **Dynamic auto-calibration**: on every start the engine constants are fitted to the zero tables of all weapons in your game version, with no shooting needed and inconsistent entries rejected automatically (currently about 1.2 mrad RMS for bows, 0.5 mrad median for guns). Every shot recorded at a range triggers a background refit.
-- Fix: weapon tuning files with a hyphen in their name (e.g. the 45-70 lever-action) were missed before; now 116 weapons.
-
-**Verified**: extracted game files were re-packed into genuine TAB/ARC/AAF/SARC containers, checked file by file with deca's own readers, and then read by the Windows build under Wine: 116 weapons, 95 ammo types, every value identical. The game folder is also found from the running game process. **Not yet run against the real game**; if reading fails, the UI shows why and falls back to the built-in data.
-
-**Use**: unzip and run `CotwMod.exe`. Run the game borderless; run as administrator if memory features can't attach; quit the game before editing populations.
+**Verified (Windows build under Wine)**: the overlay is drawn transparently over a mock game window and correctly centred; resolution is read correctly; the wizard found the held weapon in 3 rounds and bound a pointer chain; after a weapon switch in the mock game the sight changed weapon within about 1 second. **Not yet run against the real game.**

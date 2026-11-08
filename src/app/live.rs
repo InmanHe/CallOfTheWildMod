@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 #[derive(Default, Clone)]
 pub struct LiveValues {
     pub attached: bool,
+    /// game client area on screen (x, y, w, h) and whether the game is in front
+    pub window: Option<[i32; 4]>,
+    pub foreground: bool,
     pub values: HashMap<Field, f64>,
     pub raw: HashMap<Field, u64>,
     pub view_values: Vec<Option<f64>>,
@@ -52,6 +55,13 @@ pub fn spawn(shared: Arc<Mutex<Shared>>) {
             };
             if let Some(p) = proc_ {
                 let mut out = LiveValues { attached: true, ..Default::default() };
+                #[cfg(windows)]
+                if let Some((_, rect, fg)) = cotwmod::memory::win::game_window(p.pid()) {
+                    if rect[2] > 0 && rect[3] > 0 {
+                        out.window = Some(rect);
+                    }
+                    out.foreground = fg;
+                }
                 for (f, bs) in &bindings {
                     if *f == Field::ViewDistance {
                         out.view_values = bs.iter().map(|b| b.read(p.as_ref())).collect();

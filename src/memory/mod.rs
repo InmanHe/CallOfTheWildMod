@@ -41,6 +41,9 @@ pub trait Process: Send + Sync {
     fn alive(&self) -> bool {
         true
     }
+    fn pid(&self) -> u32 {
+        0
+    }
 
     fn read_u64(&self, addr: u64) -> Option<u64> {
         let mut b = [0u8; 8];

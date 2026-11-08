@@ -1,3 +1,4 @@
+#![cfg_attr(not(windows), allow(dead_code, unused_imports))]
 //! Global hotkeys (Alt + key), polled with GetAsyncKeyState — no hooks.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +18,7 @@ pub enum Action {
     WindDown,
     CalibMode,
     CalibRecord,
+    WeaponSwitched,
 }
 
 pub const KEYS: &[(u16, &str, Action)] = &[
@@ -35,6 +37,7 @@ pub const KEYS: &[(u16, &str, Action)] = &[
     (0x28, "Alt+↓", Action::WindDown),
     (0x7A, "Alt+F11", Action::CalibMode),
     (0x2D, "Alt+Insert", Action::CalibRecord),
+    (0x7B, "Alt+F12", Action::WeaponSwitched),
 ];
 
 #[cfg_attr(not(windows), allow(dead_code))]

@@ -139,6 +139,10 @@ impl Process for WinProcess {
         (self.module.0 != 0).then_some(self.module)
     }
 
+    fn pid(&self) -> u32 {
+        self.pid
+    }
+
     fn alive(&self) -> bool {
         let mut code = 0u32;
         unsafe { GetExitCodeProcess(self.handle, &mut code) != 0 && code == STILL_ACTIVE as u32 }
@@ -177,4 +181,40 @@ pub fn steam_path() -> Option<std::path::PathBuf> {
     }
     let n = (size as usize / 2).saturating_sub(1);
     Some(std::path::PathBuf::from(String::from_utf16_lossy(&buf[..n]).replace('/', "\\")))
+}
+
+/// The game's main window for a pid: (hwnd, client rect on screen x, y, w, h, is foreground).
+pub fn game_window(pid: u32) -> Option<(isize, [i32; 4], bool)> {
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetClientRect, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible};
+    struct Ctx { pid: u32, best: Option<(HWND, i64)> }
+    unsafe extern "system" fn cb(h: HWND, l: LPARAM) -> BOOL {
+        let ctx = &mut *(l as *mut Ctx);
+        let mut p = 0u32;
+        GetWindowThreadProcessId(h, &mut p);
+        if p == ctx.pid && IsWindowVisible(h) != 0 {
+            let mut r: RECT = std::mem::zeroed();
+            if GetClientRect(h, &mut r) != 0 {
+                let area = (r.right - r.left) as i64 * (r.bottom - r.top) as i64;
+                if area > ctx.best.map(|b| b.1).unwrap_or(0) {
+                    ctx.best = Some((h, area));
+                }
+            }
+        }
+        1
+    }
+    unsafe {
+        let mut ctx = Ctx { pid, best: None };
+        EnumWindows(Some(cb), &mut ctx as *mut Ctx as LPARAM);
+        let (h, _) = ctx.best?;
+        let mut r: RECT = std::mem::zeroed();
+        GetClientRect(h, &mut r);
+        let mut pt = POINT { x: 0, y: 0 };
+        ClientToScreen(h, &mut pt);
+        let fg = GetForegroundWindow();
+        let mut fpid = 0u32;
+        GetWindowThreadProcessId(fg, &mut fpid);
+        Some((h as isize, [pt.x, pt.y, r.right - r.left, r.bottom - r.top], fpid == pid))
+    }
 }

@@ -15,6 +15,7 @@
 | 🎯 **落點瞄具（任何武器、自動更新）** | 啟動時**直接讀取你電腦上安裝的遊戲檔案**（唯讀），取得當前版本全部武器與彈藥的彈道數據：動能、彈頭質量、直徑、阻力係數、重力，以及遊戲在每個歸零檔位對每種彈藥的**實際發射角**。新 DLC 槍械自動出現，遊戲更新後自動重新讀取。手上拿什麼武器，就按它的歸零、風、自身下墜算出落點。 |
 | 🔄 **動態自動校準** | 啟動時用當前遊戲版本**全部武器的歸零表**自動擬合引擎常數，不必開槍；在靶場每記錄一發射擊，就在背景自動重新擬合。 |
 | 🦌 **種群編輯器** | 可視化修改每個保護區、每個物種的公/母數量、性別轉換、稀有毛色、鑽石、巨獸；逐隻改毛色、等級、性別。自動備份、一鍵還原。 |
+| 🔫 **手持武器自動識別** | 「落點瞄具」頁點「開始自動識別」，按提示在遊戲裡切換幾次武器並按 Alt+F12，其餘（掃描、縮小範圍、指針掃描、綁定）全自動；之後切換武器時瞄具即時跟著換。 |
 | 🔍 **內存掃描器** | 類 Cheat Engine 的數值掃描與指針掃描，綁定手持武器、彈藥、歸零檔位、距離、俯仰、朝向、風、FOV，讓瞄具全自動。 |
 | 👁 **獵物可視距離** | 綁定地址後 400–800 m 可調並持續鎖定。 |
 
@@ -24,9 +25,9 @@
 
 到 [Releases](https://github.com/InmanHe/CallOfTheWildMod/releases) 下載 `CotwMod-*-windows-x64.zip`，解壓後執行 `CotwMod.exe`。
 
-- 遊戲設為 **無邊框視窗**，疊加層才能顯示在遊戲上方。
+- 遊戲設為 **無邊框視窗**。疊加層是原生透明視窗，自動貼合遊戲畫面並讀取遊戲解析度，只在遊戲處於前台時顯示，滑鼠可穿透。
 - 內存功能未連接時，以 **系統管理員身分** 執行。
-- 主視窗可放在遊戲後面，但不要最小化（疊加層由主視窗驅動）。
+- 疊加層、熱鍵與手持武器追蹤在獨立執行緒運行，主視窗最小化也照常工作。
 - 介面大小：右上角「界面」數值（預設 0.85）。
 - 設定在 `%APPDATA%\CotwMod\settings.json`，種群備份在 `%APPDATA%\CotwMod\backups\`。
 
@@ -50,6 +51,7 @@
 | Alt+PgUp / PgDn, Alt+Home / End | 距離 ±1 / ±5 m |
 | Alt+← / → , Alt+↑ / ↓ | 風來向 / 風力（校準模式下移動紅框） |
 | Alt+F11 / Alt+Insert | 校準模式 / 記錄一發 |
+| Alt+F12 | 自動識別手持武器時：「我已切換武器」 |
 
 ### 種群編輯器
 
@@ -72,6 +74,7 @@ A single-player helper for *theHunter: Call of the Wild*. Written in Rust, one `
 | 🎯 **Impact sight for any weapon, always current** | At start-up it **reads the game installed on your PC** (read-only) to get the ballistic data of every weapon and ammo in your game version: kinetic energy, mass, diameter, drag coefficient, gravity, and the **actual launch angle** the game uses for every zero setting and ammo. New DLC guns appear automatically, and the data is re-read after game updates. Whatever you hold, the overlay shows where the shot will land given the zero, wind and the weapon's own drop. |
 | 🔄 **Dynamic auto-calibration** | At start-up the engine constants are fitted automatically to **the zero tables of every weapon** in your game version, with no shooting needed. Every shot you record at a range triggers a background refit. |
 | 🦌 **Population editor** | Edit male/female counts, gender ratio, rare furs, diamonds and Great Ones per reserve and species, or edit single animals. Automatic backups, one-click restore. |
+| 🔫 **Held-weapon auto-detection** | On the Impact sight tab click **Start detection**, then switch weapons in game a few times and press Alt+F12 when asked. Scanning, narrowing, pointer scan and binding are automatic; from then on the sight follows your weapon switches in real time. |
 | 🔍 **Memory scanner** | Cheat-Engine-style value and pointer scanning. Bind the held weapon, ammo, zero setting, distance, pitch, yaw, wind and FOV so the sight runs fully automatically. |
 | 👁 **Animal view distance** | Once its address is bound, adjust from 400 to 800 m and keep it locked. |
 
@@ -81,9 +84,9 @@ A single-player helper for *theHunter: Call of the Wild*. Written in Rust, one `
 
 Get `CotwMod-*-windows-x64.zip` from [Releases](https://github.com/InmanHe/CallOfTheWildMod/releases), unzip, and run `CotwMod.exe`.
 
-- Run the game in **borderless window** mode so the overlay can draw on top of it.
+- Run the game in **borderless window** mode. The overlay is a native transparent window that fits the game view and reads its resolution automatically; it shows only while the game is in front and is click-through.
 - If memory features can't attach, run CotwMod **as administrator**.
-- The main window may sit behind the game, but don't minimise it (it drives the overlay).
+- Overlay, hotkeys and held-weapon tracking run on their own thread and keep working when the main window is minimised.
 - UI size: the "UI" value at the top right (default 0.85).
 - Settings: `%APPDATA%\CotwMod\settings.json`. Population backups: `%APPDATA%\CotwMod\backups\`.
 
@@ -107,6 +110,7 @@ The game adds random dispersion, sway and heart-rate effects to every shot by de
 | Alt+PgUp / PgDn, Alt+Home / End | Distance ±1 / ±5 m |
 | Alt+← / →, Alt+↑ / ↓ | Wind direction / strength (move the red box in calibration mode) |
 | Alt+F11 / Alt+Insert | Calibration mode / record a shot |
+| Alt+F12 | During held-weapon detection: "I switched weapons" |
 
 ### Population editor
 

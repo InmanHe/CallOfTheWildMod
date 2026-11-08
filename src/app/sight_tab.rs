@@ -95,6 +95,26 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                     changed |= ui.selectable_value(&mut app.s.mag_index, i, format!("{m}x")).changed();
                 }
             });
+            if let Some(raw) = app.live.raw.get(&Field::WeaponId).copied() {
+                if super::aim::resolve_id(raw, &app.s.weapon_ids).is_none() {
+                    ui.colored_label(ui.visuals().warn_fg_color, format!("{} 0x{raw:X}",
+                        t("检测到未识别的手持武器 ID：先在上面选中你现在拿的武器，再点“记住”", "Unrecognised held-weapon ID: select the weapon you are holding above, then Remember")));
+                    if ui.button(t("记住", "Remember")).clicked() {
+                        app.s.weapon_ids.insert(format!("{raw:X}"), app.s.weapon.clone());
+                        changed = true;
+                    }
+                }
+            }
+            if let Some(raw) = app.live.raw.get(&Field::AmmoId).copied() {
+                if super::aim::resolve_id(raw, &app.s.ammo_ids).is_none() {
+                    ui.colored_label(ui.visuals().warn_fg_color, format!("{} 0x{raw:X}",
+                        t("检测到未识别的弹药 ID：先选好当前弹药，再点“记住弹药”", "Unrecognised ammo ID: select the current ammo, then Remember ammo")));
+                    if ui.button(t("记住弹药", "Remember ammo")).clicked() {
+                        app.s.ammo_ids.insert(format!("{raw:X}"), app.s.ammo.clone());
+                        changed = true;
+                    }
+                }
+            }
             ui.label(RichText::new(t("⚠ 归零距离需与游戏内一致（或在“内存扫描”绑定“归零档位”自动同步）。",
                 "⚠ The zero must match the game (or bind 'Zero index' on the Memory tab to sync it).")).small().color(ui.visuals().warn_fg_color));
 
@@ -114,6 +134,8 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                 });
             }
 
+            ui.separator();
+            super::wizard::ui(app, ui);
             ui.separator();
             ui.heading(t("输入", "Inputs"));
             changed |= ui.checkbox(&mut app.s.use_live, t("使用内存实时数据", "Use live memory values")).changed();
@@ -157,7 +179,19 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
             let ui = &mut cols[1];
             ui.heading(t("叠加层", "Overlay"));
             changed |= ui.checkbox(&mut app.s.overlay_on, t("显示落点叠加层（Alt+F6）", "Show impact overlay (Alt+F6)")).changed();
-            ui.label(RichText::new(t("游戏需设为“无边框窗口”。叠加层不拦截鼠标。", "Run the game borderless. The overlay is click-through.")).small());
+            ui.label(RichText::new(t("原生透明窗口，自动贴合游戏画面，只在游戏处于前台时显示，不拦截鼠标。游戏需为无边框窗口。",
+                "Native transparent window fitted to the game, shown only while the game is in front, click-through. Game must be borderless.")).small());
+            {
+                let mut o = app.ov.lock().unwrap();
+                ui.checkbox(&mut o.always_show, t("游戏不在前台时也显示（调试用）", "Show even when the game is not in front (setup)"));
+                let state = if o.visible_now { t("● 叠加层显示中", "● overlay visible") } else { t("○ 叠加层未显示", "○ overlay hidden") };
+                ui.label(RichText::new(state).small());
+            }
+            changed |= ui.checkbox(&mut app.s.auto_resolution, t("自动读取游戏分辨率（游戏窗口）", "Read game resolution automatically (game window)")).changed();
+            match app.live.window {
+                Some(w) => { ui.label(RichText::new(format!("{} {}×{}", t("游戏画面：", "Game view:"), w[2], w[3])).small()); }
+                None => { ui.label(RichText::new(t("未找到游戏窗口", "Game window not found")).small()); }
+            }
             changed |= ui.checkbox(&mut app.s.show_ladder, t("显示距离刻度", "Show range ladder")).changed();
             ui.horizontal(|ui| {
                 ui.label(t("标记颜色", "Marker colour"));
@@ -216,8 +250,8 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
             ui.label(t("校准：靶场对已知距离射击，Alt+F11 进入校准模式，Alt+方向键把红框移到弹着点，Alt+Insert 记录。",
                 "Calibrate: shoot known distances, Alt+F11 = calibration mode, Alt+arrows move the red box to the hit, Alt+Insert records."));
             ui.horizontal(|ui| {
-                if ui.button(if app.calib_mode { t("退出校准模式", "Leave calibration mode") } else { t("进入校准模式", "Enter calibration mode") }).clicked() {
-                    app.calib_mode = !app.calib_mode;
+                if ui.button(if app.calib.mode { t("退出校准模式", "Leave calibration mode") } else { t("进入校准模式", "Enter calibration mode") }).clicked() {
+                    app.calib.mode = !app.calib.mode;
                 }
                 if ui.button(t("记录一发", "Record shot")).clicked() {
                     app.record_calibration_shot();
