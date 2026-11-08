@@ -1,33 +1,25 @@
-# CotwMod v0.3.0
+# CotwMod v0.4.0
 
 ## 中文
 
-**落點瞄具不再區分武器。** 內建遊戲本身的 115 把武器、95 種彈藥的彈道數據，包括動能、彈頭質量、直徑、阻力係數、重力，以及遊戲在每個歸零檔位對每種彈藥實際使用的發射角。不論手上拿弓、弩、步槍、手槍還是霰彈槍，都按當前歸零、風和該武器自身的下墜計算落點。
+**彈道數據改為直接讀取你安裝的遊戲，並自動校準。**
 
-- 武器清單可搜尋，彈藥只列出該武器可用的，歸零檔位來自武器本身的數據。
-- 手持武器 / 彈藥 / 歸零檔位可從內存自動同步。如果內存 ID 是遊戲裝備哈希會自動識別，否則每個 ID 指定一次即可。
-- 引擎全局常數（發射點高度、阻力倍數、速度效率、風偏係數）預設由遊戲全部歸零表擬合：弓弩 1.3 mrad RMS，槍械中位數 0.35 mrad。用任意武器校準一次，所有武器同時變準。
-- 介面預設縮小（0.85，右上角可調），視窗預設 1100×720。
-- 雙語 README。
+- **自動讀取本機遊戲檔案（唯讀）**：啟動時自動找到遊戲資料夾（正在運行的遊戲、Steam 各遊戲庫、Epic，或手動填寫），從 `archives_win64` 讀出當前遊戲版本**所有**武器與彈藥的彈道數據，包括新 DLC 槍械。結果會快取，遊戲更新後自動重新讀取。內建數據只在讀取失敗時作為備用。
+- **動態自動校準**：每次啟動用當前遊戲版本全部武器的歸零表自動擬合引擎常數，不需要開槍，並自動剔除不一致的條目（目前：弓弩約 1.2 mrad RMS，槍械中位數約 0.5 mrad）。在靶場每記錄一發射擊，背景自動重新擬合。
+- 修正：名稱含連字號的武器調校檔（如 45-70 槓桿步槍）之前會被漏掉，現在共 116 把武器。
 
-種群編輯器、內存掃描器、指針掃描、可視距離 400–800 m 鎖定等功能同 v0.2.0。
+**已驗證**：把提取出的遊戲檔案重新打包成真正的 TAB/ARC/AAF/SARC 容器，先用 deca 自身的讀取器逐檔核對，再讓 Windows 版程式在 Wine 下從中讀取：116 把武器、95 種彈藥、每個數值完全一致。程式也能透過正在運行的遊戲進程自動找到遊戲資料夾。**尚未在真實遊戲上運行過**；若讀取失敗，介面會顯示原因並改用內建數據。
 
 **使用**：解壓後執行 `CotwMod.exe`。遊戲設為無邊框視窗；內存功能需要時以系統管理員身分執行；修改種群前先退出遊戲。
 
-**已驗證**：種群讀寫與原版 APC 輸出逐欄位一致；Windows 內存讀取、掃描、指針掃描、疊加層已在 Wine 下對模擬遊戲進程驗證；彈道模型可重現遊戲自身的歸零表。**尚未在真實遊戲中測試**，首次使用前請備份存檔資料夾。
-
 ## English
 
-**The impact sight no longer depends on weapon presets.** It ships the game's own ballistic data for all 115 weapons and 95 ammo types: kinetic energy, mass, diameter, drag coefficient, gravity, and the launch angle the game actually uses for every zero setting and ammo. Bow, crossbow, rifle, handgun or shotgun: the point of impact follows the current zero, the wind and that weapon's own drop.
+**Ballistic data is now read from your installed game and calibrated automatically.**
 
-- Searchable weapon list; only compatible ammo is listed; zero settings come from the weapon's own data.
-- Held weapon / ammo / zero setting can sync from memory. IDs that are game equipment hashes are recognised automatically; other IDs are assigned once.
-- Engine-wide constants (launch height, drag multiplier, velocity efficiency, wind factor) default to a fit over every zero table in the game: bows 1.3 mrad RMS, guns 0.35 mrad median. Calibrating once with any weapon improves all of them.
-- Smaller default UI (0.85, adjustable at the top right); default window 1100×720.
-- Bilingual README.
+- **Reads your own game files (read-only)**: at start-up the game folder is found automatically (running game, every Steam library, Epic, or entered manually), and the ballistics of **every** weapon and ammo type in your game version are read from `archives_win64`, new DLC guns included. Results are cached and re-read after game updates. Built-in data is only a fallback.
+- **Dynamic auto-calibration**: on every start the engine constants are fitted to the zero tables of all weapons in your game version, with no shooting needed and inconsistent entries rejected automatically (currently about 1.2 mrad RMS for bows, 0.5 mrad median for guns). Every shot recorded at a range triggers a background refit.
+- Fix: weapon tuning files with a hyphen in their name (e.g. the 45-70 lever-action) were missed before; now 116 weapons.
 
-Population editor, memory scanner, pointer scan and the 400–800 m view-distance lock are unchanged from v0.2.0.
+**Verified**: extracted game files were re-packed into genuine TAB/ARC/AAF/SARC containers, checked file by file with deca's own readers, and then read by the Windows build under Wine: 116 weapons, 95 ammo types, every value identical. The game folder is also found from the running game process. **Not yet run against the real game**; if reading fails, the UI shows why and falls back to the built-in data.
 
-**Use**: unzip and run `CotwMod.exe`. Run the game borderless; run CotwMod as administrator if memory features can't attach; quit the game before editing populations.
-
-**Verified**: population edits match the original APC output field by field; Windows memory reading, scanning, pointer scanning and the overlay were tested under Wine against a mock game process; the ballistic model reproduces the game's own zero tables. **Not yet tested in the real game** — back up your save folder before first use.
+**Use**: unzip and run `CotwMod.exe`. Run the game borderless; run as administrator if memory features can't attach; quit the game before editing populations.

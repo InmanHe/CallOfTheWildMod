@@ -12,7 +12,8 @@
 
 | 功能 | 說明 |
 |---|---|
-| 🎯 **落點瞄具（任何武器）** | 不再區分武器預設。內建遊戲本身的全部 115 把武器、95 種彈藥的彈道數據（動能、彈頭質量、直徑、阻力係數、重力，以及遊戲在每個歸零檔位對每種彈藥使用的**實際發射角**）。手上拿什麼武器，就按它的歸零、風、自身下墜算出落點，透明疊加層直接畫在遊戲上。 |
+| 🎯 **落點瞄具（任何武器、自動更新）** | 啟動時**直接讀取你電腦上安裝的遊戲檔案**（唯讀），取得當前版本全部武器與彈藥的彈道數據：動能、彈頭質量、直徑、阻力係數、重力，以及遊戲在每個歸零檔位對每種彈藥的**實際發射角**。新 DLC 槍械自動出現，遊戲更新後自動重新讀取。手上拿什麼武器，就按它的歸零、風、自身下墜算出落點。 |
+| 🔄 **動態自動校準** | 啟動時用當前遊戲版本**全部武器的歸零表**自動擬合引擎常數，不必開槍；在靶場每記錄一發射擊，就在背景自動重新擬合。 |
 | 🦌 **種群編輯器** | 可視化修改每個保護區、每個物種的公/母數量、性別轉換、稀有毛色、鑽石、巨獸；逐隻改毛色、等級、性別。自動備份、一鍵還原。 |
 | 🔍 **內存掃描器** | 類 Cheat Engine 的數值掃描與指針掃描，綁定手持武器、彈藥、歸零檔位、距離、俯仰、朝向、風、FOV，讓瞄具全自動。 |
 | 👁 **獵物可視距離** | 綁定地址後 400–800 m 可調並持續鎖定。 |
@@ -31,11 +32,12 @@
 
 ### 落點瞄具是怎麼算的
 
+0. 遊戲數據來源：自動找到遊戲資料夾（正在運行的遊戲、Steam 各遊戲庫、Epic 預設路徑，也可手動填寫），讀取 `archives_win64` 內的索引與資源包（TAB/ARC、AAF、SARC、RTPC、ADF 格式），找出所有武器與彈藥定義並快取；遊戲檔案有變動才重新讀取。讀取失敗時使用內建的備用數據（遊戲版本 2777186）。
 1. 從遊戲數據取出當前武器 + 彈藥 + 歸零檔位：初速 = √(2·動能/質量)，阻力 = ½ρ·Cd·截面積/質量，重力 9.82 m/s²，發射角 = 遊戲在該歸零檔位對該彈藥的設定角（含每種箭的覆寫值）。
 2. 用 RK4 數值積分飛行軌跡，計入距離、俯仰（上下坡）、頂風/順風、側風。
 3. 換算成螢幕像素，綠色圓圈即彈著點。
 
-遊戲數據之外還有幾個**引擎全局常數**（發射點在視線下方的高度、阻力倍數、速度效率、風偏係數）。預設值是用遊戲全部武器的歸零表擬合出來的：弓弩 RMS 1.3 mrad，槍械中位數 0.35 mrad。這些常數對所有武器通用，**用任意一把武器在靶場校準一次，全部武器都會更準**。
+遊戲數據之外還有幾個**引擎全局常數**（發射點在視線下方的高度、阻力倍數、速度效率、風偏係數）。**自動校準**：每次啟動時，程式用你這個遊戲版本中所有武器的歸零表擬合這些常數（設計者設定的歸零角應讓彈道在歸零距離穿過準心），並自動剔除不一致的條目；目前版本的誤差為弓弩 RMS 約 1.2 mrad、槍械中位數約 0.5 mrad。在靶場每記錄一發射擊，會在背景自動重新擬合，用任意一把武器校準，全部武器同時變準。
 
 **手持武器自動識別**：在「內存掃描」找到手持武器 ID 並綁定。如果這個 ID 正是遊戲裝備名稱的哈希，會直接自動識別；否則每個 ID 指定一次即可。彈藥、歸零檔位同理。
 
@@ -67,7 +69,8 @@ A single-player helper for *theHunter: Call of the Wild*. Written in Rust, one `
 
 | Feature | Description |
 |---|---|
-| 🎯 **Impact sight for any weapon** | No per-weapon presets. Ships the game's own ballistic data for all 115 weapons and 95 ammo types: kinetic energy, mass, diameter, drag coefficient, gravity, and the **actual launch angle** the game uses for every zero setting and ammo. Whatever you hold, the overlay shows where the shot will land given the zero, wind and the weapon's own drop. |
+| 🎯 **Impact sight for any weapon, always current** | At start-up it **reads the game installed on your PC** (read-only) to get the ballistic data of every weapon and ammo in your game version: kinetic energy, mass, diameter, drag coefficient, gravity, and the **actual launch angle** the game uses for every zero setting and ammo. New DLC guns appear automatically, and the data is re-read after game updates. Whatever you hold, the overlay shows where the shot will land given the zero, wind and the weapon's own drop. |
+| 🔄 **Dynamic auto-calibration** | At start-up the engine constants are fitted automatically to **the zero tables of every weapon** in your game version, with no shooting needed. Every shot you record at a range triggers a background refit. |
 | 🦌 **Population editor** | Edit male/female counts, gender ratio, rare furs, diamonds and Great Ones per reserve and species, or edit single animals. Automatic backups, one-click restore. |
 | 🔍 **Memory scanner** | Cheat-Engine-style value and pointer scanning. Bind the held weapon, ammo, zero setting, distance, pitch, yaw, wind and FOV so the sight runs fully automatically. |
 | 👁 **Animal view distance** | Once its address is bound, adjust from 400 to 800 m and keep it locked. |
@@ -86,11 +89,12 @@ Get `CotwMod-*-windows-x64.zip` from [Releases](https://github.com/InmanHe/CallO
 
 ### How the sight works
 
+0. Data source: the game folder is found automatically (running game, all Steam libraries, Epic default path, or enter it manually). CotwMod reads the index and bundles in `archives_win64` (TAB/ARC, AAF, SARC, RTPC, ADF formats), finds every weapon and ammo definition and caches them; it re-reads only when the game files change. If reading fails, built-in fallback data (game build 2777186) is used.
 1. Read the current weapon + ammo + zero setting from the game data: v₀ = √(2·KE/m), drag = ½ρ·Cd·A/m, gravity 9.82 m/s², and the launch angle the game itself uses for that zero and ammo (including per-arrow overrides).
 2. Integrate the trajectory with RK4, including range, incline, head/tail wind and crosswind.
 3. Project to screen pixels. The green circle is the point of impact.
 
-Beyond the game data there are a few **engine-wide constants**: launch point below the eye, drag multiplier, velocity efficiency and wind factor. The defaults were fitted to the zero tables of every weapon in the game (bows 1.3 mrad RMS, guns 0.35 mrad median). They are shared by all weapons, so **calibrating once at a range with any weapon improves every weapon**.
+Beyond the game data there are a few **engine-wide constants**: launch point below the eye, drag multiplier, velocity efficiency and wind factor. **Auto-calibration**: on every start they are fitted to the zero tables of all weapons in your game version (the designers' zero angles should make each trajectory cross the reticle at its zero distance), with inconsistent entries rejected automatically. With current data that gives about 1.2 mrad RMS for bows and 0.5 mrad median for guns. Each shot you record at a range triggers a background refit, and calibrating with any weapon improves all of them.
 
 **Held-weapon detection**: find and bind the held-weapon ID on the Memory tab. If that ID is the game's equipment-name hash, recognition is fully automatic; otherwise assign each ID once. Ammo and zero work the same way.
 

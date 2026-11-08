@@ -17,6 +17,10 @@ pub struct Settings {
     pub lang: Lang,
     pub ui_scale: f32,
     pub save_dir: String,
+    /// game folder override (empty = auto-detect)
+    pub game_dir: String,
+    /// automatically calibrate engine constants (game zero tables + recorded shots)
+    pub engine_auto: bool,
     /// game equipment keys (from data/ballistics.json)
     pub weapon: String,
     pub ammo: String,
@@ -53,6 +57,8 @@ impl Default for Settings {
             lang: Lang::Zh,
             ui_scale: 0.85,
             save_dir: String::new(),
+            game_dir: String::new(),
+            engine_auto: true,
             weapon: "equipment_weapon_compound_bow_70lb_01".into(),
             ammo: "equipment_ammo_bh_bow_arrow_420gr_01".into(),
             zero_index: 0,

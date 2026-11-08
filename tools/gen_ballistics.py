@@ -121,7 +121,7 @@ def main(org: Path):
         weapons[name] = {"display": s(p.get(P_DISPLAY, b"")), "tuning": None}
     for f in (org / "editor/entities/hp_weapons").glob("*/*.ee"):
         b = f.read_bytes()
-        tun = [m.decode() for m in re.findall(rb"editor/entities/hp_weapons/[\w/]+/tuning/[\w]+\.wtunec", b)]
+        tun = [m.decode() for m in re.findall(rb"editor/entities/hp_weapons/[\w/\-]+/tuning/[\w\-]+\.wtunec", b)]
         tun = [t for t in tun if t in tunings]
         if not tun:
             continue

@@ -2,7 +2,7 @@ use super::hotkeys::KEYS;
 use super::settings::{ammo_name, weapon_name};
 use super::{tr, App};
 use cotwmod::ballistics::{self, wind_components, Shot};
-use cotwmod::gamedata::{self, gd, Engine, Kind};
+use cotwmod::gamedata::{self, gd, Kind};
 use cotwmod::memory::binding::Field;
 use eframe::egui::{self, Color32, RichText};
 
@@ -19,7 +19,21 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
         ui.columns(2, |cols| {
             // ---------------------------------------------------- left column
             let ui = &mut cols[0];
-            ui.heading(t("当前武器（全部来自游戏数据）", "Current weapon (all from game data)"));
+            ui.heading(t("游戏数据", "Game data"));
+            ui.label(RichText::new(if lang == super::settings::Lang::Zh { &app.data_status.0 } else { &app.data_status.1 }).small());
+            if app.load_job.is_some() {
+                ui.add(egui::ProgressBar::new(app.load_prog.done.load(std::sync::atomic::Ordering::Relaxed) as f32
+                    / app.load_prog.total.load(std::sync::atomic::Ordering::Relaxed).max(1) as f32).show_percentage());
+            }
+            ui.horizontal(|ui| {
+                ui.label(t("游戏文件夹", "Game folder"));
+                changed |= ui.add(egui::TextEdit::singleline(&mut app.s.game_dir).desired_width(230.0).hint_text(t("留空 = 自动查找", "empty = auto-detect"))).changed();
+                if ui.add_enabled(app.load_job.is_none(), egui::Button::new(t("重新读取", "Reload"))).clicked() {
+                    app.reload_game_data(true);
+                }
+            });
+            ui.separator();
+            ui.heading(t("当前武器", "Current weapon"));
             let auto = app.s.use_live && app.s.auto_weapon && app.live.raw.contains_key(&Field::WeaponId);
             if auto {
                 ui.colored_label(Color32::from_rgb(80, 200, 120), t("● 由内存自动识别手持武器", "● Held weapon detected from memory"));
@@ -82,7 +96,7 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
             ui.label(RichText::new(t("⚠ 归零距离需与游戏内一致（或在“内存扫描”绑定“归零档位”自动同步）。",
-                "⚠ The zero must match the game (or bind 'Zero index' on the Memory tab to sync it).")).small().color(Color32::LIGHT_YELLOW));
+                "⚠ The zero must match the game (or bind 'Zero index' on the Memory tab to sync it).")).small().color(ui.visuals().warn_fg_color));
 
             if let Some(st) = gamedata::setup(&app.s.weapon, &app.s.ammo, app.s.zero_index, &app.s.engine) {
                 let a = &g.ammo[&app.s.ammo];
@@ -179,9 +193,15 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
             });
 
             ui.separator();
-            ui.heading(t("引擎常数与校准", "Engine constants & calibration"));
-            ui.label(RichText::new(t("这些是游戏引擎全局常数（不随武器变化），默认值由游戏全部武器的归零表拟合得到。用任意武器校准一次即适用于所有武器。",
-                "Engine-wide constants (same for every weapon), fitted from the zero tables of all weapons in the game. Calibrating with any weapon improves all of them.")).small());
+            ui.heading(t("引擎常数与自动校准", "Engine constants & auto-calibration"));
+            changed |= ui.checkbox(&mut app.s.engine_auto, t("自动校准（启动时用游戏全部归零表拟合；每记录一发射击自动重新拟合）",
+                "Auto-calibrate (fit to all of the game's zero tables at start; refit after every recorded shot)")).changed();
+            if !app.fit_status.is_empty() {
+                ui.label(RichText::new(format!("{} {}", t("归零表拟合误差 弓弩 RMS / 枪械中位数：", "Zero-table fit, bows RMS / guns median:"), app.fit_status)).small());
+            }
+            if app.fit_job.is_some() {
+                ui.label(RichText::new(t("正在根据射击记录重新拟合…", "Refitting from shots…")).small());
+            }
             egui::Grid::new("engine").show(ui, |ui| {
                 let e = &mut app.s.engine;
                 ui.label(t("发射点低于视线 m", "Launch below eye m")); changed |= ui.add(egui::DragValue::new(&mut e.launch_height).range(-0.3..=0.3).speed(0.001).max_decimals(3)).changed(); ui.end_row();
@@ -190,9 +210,8 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                 ui.label(t("枪械速度效率", "Gun velocity eff.")); changed |= ui.add(egui::DragValue::new(&mut e.vel_eff_gun).range(0.5..=1.5).speed(0.001).max_decimals(3)).changed(); ui.end_row();
                 ui.label(t("风偏系数", "Wind factor")); changed |= ui.add(egui::DragValue::new(&mut e.wind_factor).range(0.0..=10.0).speed(0.01)).changed(); ui.end_row();
             });
-            if ui.small_button(t("恢复默认", "Reset to defaults")).clicked() {
-                app.s.engine = Engine::default();
-                changed = true;
+            if ui.small_button(t("重新自动校准", "Re-run auto-calibration")).clicked() {
+                app.reload_game_data(false);
             }
             ui.label(t("校准：靶场对已知距离射击，Alt+F11 进入校准模式，Alt+方向键把红框移到弹着点，Alt+Insert 记录。",
                 "Calibrate: shoot known distances, Alt+F11 = calibration mode, Alt+arrows move the red box to the hit, Alt+Insert records."));
@@ -220,15 +239,8 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                 app.s.cal_shots.remove(i);
                 changed = true;
             }
-            if ui.add_enabled(app.s.cal_shots.len() >= 2, egui::Button::new(t("拟合引擎常数", "Fit engine constants"))).clicked() {
-                match gamedata::fit_engine(&app.s.engine, &app.s.cal_shots) {
-                    Some((e, rms, max, names)) => {
-                        app.s.engine = e;
-                        app.status = format!("{} rms {:.3} mrad, max {:.3} ({})", t("校准完成", "Calibrated"), rms, max, names.join(", "));
-                        changed = true;
-                    }
-                    None => app.status = t("拟合失败", "Fit failed").into(),
-                }
+            if ui.add_enabled(app.s.cal_shots.len() >= 2 && app.fit_job.is_none(), egui::Button::new(t("立即用射击记录拟合", "Fit from shots now"))).clicked() {
+                app.refit_from_shots();
             }
 
             ui.separator();

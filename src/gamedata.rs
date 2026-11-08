@@ -4,9 +4,9 @@
 use crate::ballistics::Projectile;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::OnceLock;
+use std::sync::{Arc, RwLock};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Zero {
     pub distance: f64,
     /// launch angle above the line of sight, degrees
@@ -14,9 +14,12 @@ pub struct Zero {
     pub h_angle: f64,
     /// per-ammo angle overrides (degrees)
     pub overrides: BTreeMap<String, f64>,
+    /// unresolved overrides while reading game files (ammo-name hash, angle)
+    #[serde(skip)]
+    pub override_hashes: Vec<(u32, f64)>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tuning {
     pub ke: f64,
     pub gravity: f64,
@@ -26,7 +29,7 @@ pub struct Tuning {
     pub scatter_max: f64,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Weapon {
     pub display: String,
     pub tuning: String,
@@ -34,7 +37,7 @@ pub struct Weapon {
     pub hash: u32,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Ammo {
     pub display: String,
     pub mass: f64,
@@ -48,7 +51,7 @@ pub struct Ammo {
     pub hash: u32,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GameData {
     pub source: String,
     pub weapons: BTreeMap<String, Weapon>,
@@ -58,19 +61,42 @@ pub struct GameData {
     pub by_hash: HashMap<u32, String>,
 }
 
-static GD: OnceLock<GameData> = OnceLock::new();
-
-pub fn gd() -> &'static GameData {
-    GD.get_or_init(|| {
+impl GameData {
+    pub fn index(&mut self) {
+        self.by_hash.clear();
+        for (k, w) in &self.weapons {
+            self.by_hash.insert(w.hash, k.clone());
+        }
+        for (k, a) in &self.ammo {
+            self.by_hash.insert(a.hash, k.clone());
+        }
+    }
+    pub fn embedded() -> GameData {
         let mut g: GameData = serde_json::from_str(include_str!("../data/ballistics.json")).expect("embedded ballistics");
-        for (k, w) in &g.weapons {
-            g.by_hash.insert(w.hash, k.clone());
-        }
-        for (k, a) in &g.ammo {
-            g.by_hash.insert(a.hash, k.clone());
-        }
+        g.source = format!("embedded ({})", g.source);
+        g.index();
         g
-    })
+    }
+    pub fn is_embedded(&self) -> bool {
+        self.source.starts_with("embedded")
+    }
+}
+
+static GD: RwLock<Option<Arc<GameData>>> = RwLock::new(None);
+
+/// Current game data: the installed game's files once loaded, embedded data before that.
+pub fn gd() -> Arc<GameData> {
+    if let Some(g) = GD.read().unwrap().as_ref() {
+        return g.clone();
+    }
+    let mut w = GD.write().unwrap();
+    w.get_or_insert_with(|| Arc::new(GameData::embedded())).clone()
+}
+
+pub fn set_gd(g: GameData) {
+    let mut g = g;
+    g.index();
+    *GD.write().unwrap() = Some(Arc::new(g));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +130,7 @@ pub struct Engine {
 
 impl Default for Engine {
     fn default() -> Self {
-        Engine { launch_height: 0.065, drag_mul: 1.9, vel_eff_bow: 0.972, vel_eff_gun: 1.10, wind_factor: 1.0, air_density: 1.225 }
+        Engine { launch_height: 0.073, drag_mul: 2.24, vel_eff_bow: 0.981, vel_eff_gun: 1.15, wind_factor: 1.0, air_density: 1.225 }
     }
 }
 
@@ -120,7 +146,10 @@ pub struct Setup {
 
 /// Build the projectile + bore angle the game uses for weapon/ammo/zero index.
 pub fn setup(weapon: &str, ammo: &str, zero_index: usize, e: &Engine) -> Option<Setup> {
-    let g = gd();
+    setup_in(&gd(), weapon, ammo, zero_index, e)
+}
+
+pub fn setup_in(g: &GameData, weapon: &str, ammo: &str, zero_index: usize, e: &Engine) -> Option<Setup> {
     let w = g.weapons.get(weapon)?;
     let a = g.ammo.get(ammo)?;
     let t = g.tunings.get(&w.tuning)?;
@@ -201,8 +230,73 @@ pub fn fit_engine(e0: &Engine, shots: &[crate::ballistics::CalShot]) -> Option<(
 }
 
 /// Look up a raw in-memory id: game equipment-name hash of a weapon or ammo.
-pub fn by_hash(raw: u64) -> Option<&'static str> {
-    gd().by_hash.get(&(raw as u32)).map(|s| s.as_str())
+pub fn by_hash(raw: u64) -> Option<String> {
+    gd().by_hash.get(&(raw as u32)).cloned()
+}
+
+/// Automatic calibration without shooting: fit the engine constants so the
+/// game's own zero angles (every weapon/ammo/zero in the loaded data) hit at
+/// their zero distance. Returns (engine, bow rms mrad, gun median mrad, samples).
+pub fn fit_engine_to_tables(g: &GameData, e0: &Engine) -> Option<(Engine, f64, f64, usize)> {
+    use crate::ballistics::{solve_bore, Shot};
+    let mut bows: Vec<(String, String, usize, f64)> = vec![];
+    let mut guns: Vec<(String, String, usize, f64)> = vec![];
+    let mut seen = std::collections::HashSet::new();
+    for (wk, w) in &g.weapons {
+        let t = g.tunings.get(&w.tuning)?;
+        for (zi, z) in t.zeros.iter().enumerate() {
+            for ak in &w.ammo {
+                let Some(a) = g.ammo.get(ak) else { continue };
+                if ak.contains("tracer") || a.projectiles != 1 || !seen.insert((w.tuning.clone(), ak.clone(), zi)) {
+                    continue;
+                }
+                if kind(wk) == Kind::Bow {
+                    if z.overrides.contains_key(ak) {
+                        bows.push((wk.clone(), ak.clone(), zi, z.distance));
+                    }
+                } else if z.overrides.is_empty() && z.distance > 0.0 {
+                    guns.push((wk.clone(), ak.clone(), zi, z.distance));
+                }
+            }
+        }
+    }
+    // keep the fit fast: subsample guns
+    let step = (guns.len() / 120).max(1);
+    let guns: Vec<_> = guns.into_iter().step_by(step).collect();
+    let all: Vec<_> = bows.iter().chain(guns.iter()).cloned().collect();
+    if all.len() < 6 {
+        return None;
+    }
+    let make = |x: &[f64]| Engine { launch_height: x[0], drag_mul: x[1], vel_eff_bow: x[2], vel_eff_gun: x[3], ..*e0 };
+    let resid = |e: &Engine, set: &[(String, String, usize, f64)]| -> Option<Vec<f64>> {
+        set.iter().map(|(w, a, zi, d)| {
+            let s = setup_in(g, w, a, *zi, e)?;
+            Some(solve_bore(&s.proj, s.bore, 0.0, &Shot { distance: *d, ..Default::default() })?.drop_mrad)
+        }).collect()
+    };
+    let x0 = [e0.launch_height, e0.drag_mul, e0.vel_eff_bow, e0.vel_eff_gun];
+    let (lo, hi) = ([-0.3, 0.0, 0.5, 0.5], [0.3, 10.0, 1.5, 1.5]);
+    // pass 1 on everything, then drop entries inconsistent with the consensus
+    // (some zero tables in the game are hand-tuned oddly), pass 2 on the rest
+    let f1 = |x: &[f64]| -> Option<Vec<f64>> { resid(&make(x), &all) };
+    let (x1, _, _) = crate::ballistics::lm(&x0, &lo, &hi, &f1)?;
+    let r1 = resid(&make(&x1), &all)?;
+    let mut abs: Vec<f64> = r1.iter().map(|v| v.abs()).collect();
+    abs.sort_by(|a, b| a.total_cmp(b));
+    let cut = (abs[abs.len() / 2] * 4.0).max(3.0);
+    let keep: Vec<_> = all.iter().zip(&r1).filter(|(_, r)| r.abs() <= cut).map(|(s, _)| s.clone()).collect();
+    let f2 = |x: &[f64]| -> Option<Vec<f64>> { resid(&make(x), &keep) };
+    let (x, _, _) = crate::ballistics::lm(&x1, &lo, &hi, &f2)?;
+    let e = make(&x);
+    let bows: Vec<_> = keep.iter().filter(|s| kind(&s.0) == Kind::Bow).cloned().collect();
+    let guns: Vec<_> = keep.iter().filter(|s| kind(&s.0) == Kind::Gun).cloned().collect();
+    let rb = resid(&e, &bows)?;
+    let mut rg: Vec<f64> = resid(&e, &guns)?.into_iter().map(f64::abs).collect();
+    rg.sort_by(|a, b| a.total_cmp(b));
+    let rms_b = (rb.iter().map(|v| v * v).sum::<f64>() / rb.len().max(1) as f64).sqrt();
+    let med_g = rg.get(rg.len() / 2).copied().unwrap_or(0.0);
+    let _ = all.len() - keep.len();
+    Some((e, rms_b, med_g, keep.len()))
 }
 
 #[cfg(test)]
@@ -264,9 +358,17 @@ mod tests {
     }
 
     #[test]
+    fn table_fit_reproduces_offline_fit() {
+        let g = GameData::embedded();
+        let (e, rms_b, med_g, n) = fit_engine_to_tables(&g, &Engine::default()).unwrap();
+        assert!(n > 100, "{n}");
+        assert!(rms_b < 1.6 && med_g < 0.6, "{e:?} bows {rms_b} guns {med_g}");
+    }
+
+    #[test]
     fn hash_lookup() {
         let g = gd();
         let (k, w) = g.weapons.iter().next().unwrap();
-        assert_eq!(by_hash(w.hash as u64), Some(k.as_str()));
+        assert_eq!(by_hash(w.hash as u64).as_deref(), Some(k.as_str()));
     }
 }

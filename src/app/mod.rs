@@ -1,3 +1,4 @@
+mod gameload;
 pub mod hotkeys;
 pub mod live;
 mod mem_tab;
@@ -52,6 +53,11 @@ pub struct App {
     dirty: bool,
     pop: pop_tab::PopState,
     mem: mem_tab::MemState,
+    pub load_job: Option<std::thread::JoinHandle<gameload::LoadResult>>,
+    pub load_prog: Arc<cotwmod::gamefiles::Progress>,
+    pub data_status: (String, String),
+    pub fit_status: String,
+    pub fit_job: Option<std::thread::JoinHandle<Option<(gamedata::Engine, f64, f64, Vec<&'static str>)>>>,
 }
 
 pub fn tr(lang: Lang, zh: &'static str, en: &'static str) -> &'static str {
@@ -94,9 +100,58 @@ impl App {
             status: String::new(),
             last_save: Instant::now(),
             dirty: false,
+            load_job: None,
+            load_prog: Arc::new(Default::default()),
+            data_status: ("正在读取游戏数据…".into(), "Reading game data…".into()),
+            fit_status: String::new(),
+            fit_job: None,
         };
         app.sync_shared();
+        app.reload_game_data(false);
         app
+    }
+
+    pub fn reload_game_data(&mut self, force: bool) {
+        if self.load_job.is_some() {
+            return;
+        }
+        self.load_prog = Arc::new(Default::default());
+        self.data_status = ("正在读取游戏数据…".into(), "Reading game data…".into());
+        self.load_job = Some(gameload::spawn(self.s.game_dir.clone(), force, gamedata::Engine::default(), self.load_prog.clone()));
+    }
+
+    /// Dynamic calibration: refit the engine constants from recorded shots in the background.
+    pub fn refit_from_shots(&mut self) {
+        if self.fit_job.is_none() && self.s.cal_shots.len() >= 2 {
+            self.fit_job = Some(gameload::spawn_shot_fit(self.s.engine, self.s.cal_shots.clone()));
+        }
+    }
+
+    fn poll_jobs(&mut self) {
+        if self.load_job.as_ref().map(|h| h.is_finished()).unwrap_or(false) {
+            if let Ok(r) = self.load_job.take().unwrap().join() {
+                self.data_status = (
+                    format!("{}（{} 把武器 / {} 种弹药）", r.msg_zh, r.weapons, r.ammo),
+                    format!("{} ({} weapons / {} ammo)", r.msg_en, r.weapons, r.ammo),
+                );
+                if let Some((e, rb, mg, n)) = r.fit {
+                    self.fit_status = format!("{rb:.2} / {mg:.2} mrad ({n})");
+                    if self.s.engine_auto {
+                        self.s.engine = gamedata::Engine { wind_factor: self.s.engine.wind_factor, ..e };
+                        self.dirty = true;
+                        self.refit_from_shots();
+                    }
+                }
+                self.s.fix();
+            }
+        }
+        if self.fit_job.as_ref().map(|h| h.is_finished()).unwrap_or(false) {
+            if let Ok(Some((e, rms, max, names))) = self.fit_job.take().unwrap().join() {
+                self.s.engine = e;
+                self.dirty = true;
+                self.status = format!("{} rms {rms:.3} mrad, max {max:.3} ({})", self.t("已根据射击记录自动校准", "Auto-calibrated from recorded shots"), names.join(", "));
+            }
+        }
     }
 
     pub fn t(&self, zh: &'static str, en: &'static str) -> &'static str {
@@ -298,6 +353,9 @@ impl App {
         });
         self.status = format!("{} #{}", self.t("已记录校准射击", "Recorded calibration shot"), self.s.cal_shots.len());
         self.dirty = true;
+        if self.s.engine_auto {
+            self.refit_from_shots();
+        }
     }
 
     fn draw_overlay(&mut self, ctx: &egui::Context, aim: Option<&AimOut>) {
@@ -391,6 +449,7 @@ impl eframe::App for App {
             ctx.set_zoom_factor(self.s.ui_scale);
         }
         self.live = self.shared.lock().unwrap().out.clone();
+        self.poll_jobs();
         for a in self.hotkeys.poll() {
             self.handle_action(a);
         }
