@@ -6,11 +6,12 @@ pub mod settings;
 mod sight_tab;
 
 use cotwmod::ballistics::{self, relative_dir, wind_components, Camera, Shot};
+use cotwmod::gamedata::{self, gd, Kind};
 use cotwmod::memory::binding::Field;
 use eframe::egui::{self, Color32, FontId, Pos2, Stroke, Vec2};
 use hotkeys::{Action, Hotkeys};
 use live::{LiveValues, Shared};
-use settings::{Lang, Settings};
+use settings::{ammo_name, weapon_name, Lang, Settings};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -126,23 +127,36 @@ impl App {
         c
     }
 
+    /// Resolve a raw in-memory id: equipment-name hash first, then learned ids.
+    pub fn resolve_id(&self, raw: u64, learned: &std::collections::HashMap<String, String>) -> Option<String> {
+        gamedata::by_hash(raw).map(|s| s.to_string()).or_else(|| learned.get(&format!("{raw:X}")).cloned())
+    }
+
     fn apply_auto_weapon(&mut self) {
         if !(self.s.use_live && self.s.auto_weapon) {
             return;
         }
-        if let Some(raw) = self.live.raw.get(&Field::WeaponId) {
-            if let Some(k) = self.s.weapon_ids.get(&format!("{raw:X}")).cloned() {
-                if k != self.s.weapon && self.s.weapons.contains_key(&k) {
-                    self.s.weapon = k;
-                    self.s.fix();
+        if let Some(raw) = self.live.raw.get(&Field::WeaponId).copied() {
+            if let Some(k) = self.resolve_id(raw, &self.s.weapon_ids) {
+                if gd().weapons.contains_key(&k) && k != self.s.weapon {
+                    self.s.set_weapon(&k);
+                    self.dirty = true;
                 }
             }
         }
-        if let Some(raw) = self.live.raw.get(&Field::AmmoId) {
-            if let Some(k) = self.s.ammo_ids.get(&format!("{raw:X}")).cloned() {
-                if k != self.s.ammo && self.s.weapon().ammo.contains_key(&k) {
+        if let Some(raw) = self.live.raw.get(&Field::AmmoId).copied() {
+            if let Some(k) = self.resolve_id(raw, &self.s.ammo_ids) {
+                if gd().weapons[&self.s.weapon].ammo.contains(&k) && k != self.s.ammo {
                     self.s.ammo = k;
+                    self.dirty = true;
                 }
+            }
+        }
+        if let Some(z) = self.live.values.get(&Field::ZeroIndex).copied() {
+            let n = gd().tunings[&gd().weapons[&self.s.weapon].tuning].zeros.len();
+            if z >= 0.0 && (z as usize) < n && z as usize != self.s.zero_index {
+                self.s.zero_index = z as usize;
+                self.dirty = true;
             }
         }
     }
@@ -160,16 +174,25 @@ impl App {
             _ => (s.wind_rel, false),
         };
         let (hw, cw) = wind_components(wind_speed, wind_rel);
-        let proj = s.projectile();
+        let st = gamedata::setup(&s.weapon, &s.ammo, s.zero_index, &s.engine)?;
         let incline = pitch.unwrap_or(s.incline);
         let shot = Shot { distance, incline_deg: incline, headwind: hw, crosswind: cw };
-        let sol = if pitch.is_some() { ballistics::solve(&proj, s.zero, &shot)? } else { ballistics::solve_hold(&proj, s.zero, &shot)? };
+        let sol = if pitch.is_some() {
+            ballistics::solve_bore(&st.proj, st.bore, st.bore_h, &shot)?
+        } else {
+            ballistics::solve_bore_hold(&st.proj, st.bore, st.bore_h, &shot)?
+        };
         let cam = self.camera();
         let (dx, dy) = cam.impact_px(sol.drop_mrad, sol.drift_mrad);
         let mut ladder = vec![];
         if s.show_ladder {
-            for &d in &s.ladder {
-                if let Some(l) = ballistics::solve(&proj, s.zero, &Shot { distance: d, ..shot }) {
+            let steps: Vec<f64> = if gamedata::kind(&s.weapon) == Kind::Bow {
+                (1..=8).map(|i| i as f64 * 10.0).collect()
+            } else {
+                (1..=8).map(|i| i as f64 * 50.0).collect()
+            };
+            for d in steps {
+                if let Some(l) = ballistics::solve_bore(&st.proj, st.bore, st.bore_h, &Shot { distance: d, ..shot }) {
                     let (lx, ly) = cam.impact_px(l.drop_mrad, l.drift_mrad);
                     ladder.push((d, lx + s.aim_ref[0], ly + s.aim_ref[1]));
                 }
@@ -223,23 +246,25 @@ impl App {
         match a {
             Action::ToggleOverlay => s.overlay_on = !s.overlay_on,
             Action::NextWeapon => {
-                let keys: Vec<String> = s.weapons.keys().cloned().collect();
-                let i = keys.iter().position(|k| *k == s.weapon).map(|i| (i + 1) % keys.len()).unwrap_or(0);
-                s.weapon = keys[i].clone();
-                s.ammo.clear();
-                s.zero = -1.0;
+                // cycle through recently used weapons
+                if s.recent.len() > 1 {
+                    let i = s.recent.iter().position(|k| *k == s.weapon).map(|i| (i + 1) % s.recent.len()).unwrap_or(0);
+                    let k = s.recent[i].clone();
+                    s.weapon = k;
+                    s.ammo.clear();
+                    s.zero_index = 0;
+                }
             }
             Action::NextAmmo => {
-                let keys: Vec<String> = s.weapon().ammo.keys().cloned().collect();
+                let keys = gd().weapons[&s.weapon].ammo.clone();
                 let i = keys.iter().position(|k| *k == s.ammo).map(|i| (i + 1) % keys.len()).unwrap_or(0);
                 s.ammo = keys[i].clone();
             }
             Action::NextZero => {
-                let z = &s.weapon().zero_options;
-                let i = z.iter().position(|v| (*v - s.zero).abs() < 1e-6).map(|i| (i + 1) % z.len()).unwrap_or(0);
-                s.zero = z[i];
+                let n = gd().tunings[&gd().weapons[&s.weapon].tuning].zeros.len().max(1);
+                s.zero_index = (s.zero_index + 1) % n;
             }
-            Action::NextMag => s.mag_index += 1,
+            Action::NextMag => s.mag_index = (s.mag_index + 1) % s.mags.len().max(1),
             Action::DistPlus1 => s.distance += 1.0,
             Action::DistMinus1 => s.distance -= 1.0,
             Action::DistPlus5 => s.distance += 5.0,
@@ -249,9 +274,6 @@ impl App {
             Action::WindUp => s.wind_level += 1,
             Action::WindDown => s.wind_level = s.wind_level.saturating_sub(1),
             Action::CalibMode | Action::CalibRecord => {}
-        }
-        if s.mag_index >= s.weapon().magnification.len() {
-            s.mag_index = 0;
         }
         s.fix();
         self.dirty = true;
@@ -266,7 +288,8 @@ impl App {
             weapon: self.s.weapon.clone(),
             ammo: self.s.ammo.clone(),
             distance: a.distance,
-            zero: self.s.zero,
+            zero: self.s.zero_distance(),
+            zero_index: self.s.zero_index,
             incline_deg: a.incline,
             headwind: hw,
             crosswind: cw,
@@ -295,12 +318,10 @@ impl App {
         let color = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
         let radius = self.s.marker_radius;
         let lang = self.s.lang;
-        let w = self.s.weapon();
-        let wname = if lang == Lang::Zh { w.name_zh.clone() } else { w.name_en.clone() };
-        let am = &w.ammo[&self.s.ammo];
-        let aname = if lang == Lang::Zh { am.name_zh.clone() } else { am.name_en.clone() };
-        let calibrated = am.calibrated;
-        let zero = self.s.zero;
+        let wname = weapon_name(&self.s.weapon);
+        let aname = ammo_name(&self.s.ammo);
+        let calibrated = !self.s.cal_shots.is_empty() && self.s.engine != gamedata::Engine::default();
+        let zero = self.s.zero_distance();
         let calib = self.calib_mode.then_some(self.calib_marker);
         let status = self.status.clone();
         let aim = aim.map(|a| (a.dx, a.dy, a.ladder.clone(), a.drop_mrad, a.drift_mrad, a.tof, a.distance, a.incline,
@@ -315,7 +336,7 @@ impl App {
                 let white = Color32::from_rgba_unmultiplied(255, 255, 255, 150);
                 p.line_segment([c - Vec2::new(4.0, 0.0), c + Vec2::new(4.0, 0.0)], Stroke::new(1.0f32, white));
                 p.line_segment([c - Vec2::new(0.0, 4.0), c + Vec2::new(0.0, 4.0)], Stroke::new(1.0f32, white));
-                let mut lines: Vec<String> = vec![format!("{wname} | {aname}{}", if calibrated { "" } else { tr(lang, "  [未校准]", "  [uncalibrated]") })];
+                let mut lines: Vec<String> = vec![format!("{wname} | {aname}{}", if calibrated { tr(lang, "  [已校准]", "  [calibrated]") } else { "" })];
                 if let Some((dx, dy, ladder, drop, drift, tof, dist, inc, ws, wr, live)) = &aim {
                     let mut last_y = f32::NAN;
                     for (d, lx, ly) in ladder {
@@ -366,6 +387,9 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if (ctx.zoom_factor() - self.s.ui_scale).abs() > 0.001 {
+            ctx.set_zoom_factor(self.s.ui_scale);
+        }
         self.live = self.shared.lock().unwrap().out.clone();
         for a in self.hotkeys.poll() {
             self.handle_action(a);
@@ -376,7 +400,7 @@ impl eframe::App for App {
             ui.horizontal(|ui| {
                 ui.heading("CotwMod");
                 ui.separator();
-                for (t, zh, en) in [(Tab::Population, "种群编辑", "Population"), (Tab::Sight, "弓弩瞄具", "Bow sight"), (Tab::Memory, "内存扫描", "Memory")] {
+                for (t, zh, en) in [(Tab::Population, "种群编辑", "Population"), (Tab::Sight, "落点瞄具", "Impact sight"), (Tab::Memory, "内存扫描", "Memory")] {
                     if ui.selectable_label(self.tab == t, tr(self.s.lang, zh, en)).clicked() {
                         self.tab = t;
                     }
@@ -387,6 +411,12 @@ impl eframe::App for App {
                     ui.selectable_value(&mut lang, Lang::Zh, "简体中文");
                     if lang != self.s.lang {
                         self.s.lang = lang;
+                        self.dirty = true;
+                    }
+                    ui.separator();
+                    let mut sc = self.s.ui_scale;
+                    if ui.add(egui::DragValue::new(&mut sc).range(0.6..=1.5).speed(0.01).max_decimals(2).prefix(tr(self.s.lang, "界面 ", "UI "))).changed() {
+                        self.s.ui_scale = sc;
                         self.dirty = true;
                     }
                     ui.separator();

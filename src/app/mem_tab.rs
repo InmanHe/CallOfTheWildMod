@@ -73,7 +73,8 @@ impl Default for MemState {
 fn field_name(f: Field, lang: Lang) -> &'static str {
     match f {
         Field::WeaponId => tr(lang, "手持武器 ID", "Held weapon ID"),
-        Field::AmmoId => tr(lang, "箭矢 ID", "Ammo ID"),
+        Field::AmmoId => tr(lang, "弹药 ID", "Ammo ID"),
+        Field::ZeroIndex => tr(lang, "归零档位", "Zero index"),
         Field::AimDistance => tr(lang, "瞄准距离 (m)", "Aim distance (m)"),
         Field::CameraPitch => tr(lang, "镜头俯仰 (°)", "Camera pitch (°)"),
         Field::CameraYaw => tr(lang, "镜头朝向 (°)", "Camera yaw (°)"),
@@ -88,7 +89,9 @@ fn field_hint(f: Field, lang: Lang) -> &'static str {
     match f {
         Field::WeaponId => tr(lang, "类型 4 Bytes，首次扫描“未知初始值”；切换武器后“已改变”，不切换时“未改变”，反复几轮。再切回原武器，值应回到之前的数。",
             "4 Bytes, first scan 'Unknown'; switch weapon -> 'Changed', don't switch -> 'Unchanged', repeat. Switching back should restore the old value."),
-        Field::AmmoId => tr(lang, "同上，切换箭矢类型。", "Same as weapon, switching ammo type."),
+        Field::AmmoId => tr(lang, "同上，切换弹药类型。", "Same as weapon, switching ammo type."),
+        Field::ZeroIndex => tr(lang, "4 Bytes 或 Byte。游戏里切换归零距离：第 1 档=0、第 2 档=1、第 3 档=2，用“精确值”扫描 0/1/2。档位顺序见“落点瞄具”页的归零按钮。",
+            "4 Bytes or Byte. Change the zero in game: 1st setting = 0, 2nd = 1, 3rd = 2; exact-scan 0/1/2. Order = the zero buttons on the Bow sight tab."),
         Field::AimDistance => tr(lang, "Float。用测距仪/望远镜看着物体，按显示的距离做“精确值”扫描（容差 0.5），换目标后再扫。",
             "Float. Look at things with the rangefinder and scan the shown distance (tolerance 0.5); change target and rescan."),
         Field::CameraPitch => tr(lang, "Float。抬头扫“增大”，低头扫“减小”。可能是弧度：绑定后把缩放设为 57.29578。",
@@ -381,66 +384,63 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
             // ------------------------------------------- weapon id learning
             ui.separator();
             ui.heading(t("手持武器识别", "Held weapon recognition"));
-            let raw_w = app.live.raw.get(&Field::WeaponId).copied();
-            let raw_a = app.live.raw.get(&Field::AmmoId).copied();
-            match raw_w {
-                None => { ui.label(t("先绑定“手持武器 ID”。", "Bind 'Held weapon ID' first.")); }
-                Some(r) => {
-                    let key = format!("{r:X}");
-                    let known = app.s.weapon_ids.get(&key).cloned();
-                    ui.label(format!("{} 0x{key} → {}", t("当前武器 ID", "Current weapon ID"),
-                        known.as_ref().and_then(|k| app.s.weapons.get(k)).map(|w| if lang == Lang::Zh { w.name_zh.clone() } else { w.name_en.clone() })
-                            .unwrap_or_else(|| t("未知（请指定）", "unknown (assign it)").into())));
+            ui.label(RichText::new(t("若内存中的 ID 正是游戏装备哈希，会自动识别（无需设置）；否则每个 ID 指定一次即可。",
+                "If the in-memory ID is the game's equipment hash it is recognised automatically; otherwise assign each ID once.")).small());
+            for (field, is_weapon) in [(Field::WeaponId, true), (Field::AmmoId, false)] {
+                let Some(r) = app.live.raw.get(&field).copied() else {
+                    ui.label(format!("{}: {}", field_name(field, lang), t("未绑定", "not bound")));
+                    continue;
+                };
+                let key = format!("{r:X}");
+                let auto = cotwmod::gamedata::by_hash(r).map(|s| s.to_string());
+                let learned = if is_weapon { app.s.weapon_ids.get(&key).cloned() } else { app.s.ammo_ids.get(&key).cloned() };
+                let name = |k: &str| if is_weapon { super::settings::weapon_name(k) } else { super::settings::ammo_name(k) };
+                match (&auto, &learned) {
+                    (Some(k), _) => { ui.colored_label(Color32::from_rgb(80, 200, 120), format!("0x{key} → {} ({})", name(k), t("自动", "auto"))); }
+                    (None, Some(k)) => { ui.label(format!("0x{key} → {} ({})", name(k), t("已学习", "learned"))); }
+                    (None, None) => { ui.colored_label(Color32::YELLOW, format!("0x{key} → {}", t("未知，请指定", "unknown, assign it"))); }
+                }
+                if auto.is_none() {
                     ui.horizontal(|ui| {
-                        if app.mem.weapon_pick.is_empty() {
-                            app.mem.weapon_pick = app.s.weapon.clone();
+                        let pick = if is_weapon { &mut app.mem.weapon_pick } else { &mut app.mem.ammo_pick };
+                        if pick.is_empty() {
+                            *pick = if is_weapon { app.s.weapon.clone() } else { app.s.ammo.clone() };
                         }
-                        egui::ComboBox::from_id_salt("wp").width(240.0)
-                            .selected_text(app.s.weapons.get(&app.mem.weapon_pick).map(|w| if lang == Lang::Zh { w.name_zh.clone() } else { w.name_en.clone() }).unwrap_or_default())
-                            .show_ui(ui, |ui| {
-                                for (k, w) in &app.s.weapons {
-                                    ui.selectable_value(&mut app.mem.weapon_pick, k.clone(), if lang == Lang::Zh { &w.name_zh } else { &w.name_en });
-                                }
-                            });
-                        if ui.button(t("把当前 ID 设为此武器", "Assign current ID")).clicked() {
-                            app.s.weapon_ids.insert(key.clone(), app.mem.weapon_pick.clone());
+                        let g = cotwmod::gamedata::gd();
+                        egui::ComboBox::from_id_salt(("assign", is_weapon)).width(300.0).height(400.0).selected_text(name(pick)).show_ui(ui, |ui| {
+                            let mut items: Vec<(String, String)> = if is_weapon {
+                                g.weapons.iter().map(|(k, w)| (k.clone(), w.display.clone())).collect()
+                            } else {
+                                g.ammo.iter().map(|(k, a)| (k.clone(), a.display.clone())).collect()
+                            };
+                            items.sort_by(|a, b| a.1.cmp(&b.1));
+                            for (k, d) in items {
+                                ui.selectable_value(pick, k, d);
+                            }
+                        });
+                        if ui.button(t("指定", "Assign")).clicked() {
+                            let v = pick.clone();
+                            if is_weapon { app.s.weapon_ids.insert(key.clone(), v); } else { app.s.ammo_ids.insert(key.clone(), v); }
                             app.mark_dirty();
                         }
                     });
                 }
             }
-            if let Some(r) = raw_a {
-                let key = format!("{r:X}");
-                ui.label(format!("{} 0x{key} → {}", t("当前箭矢 ID", "Current ammo ID"), app.s.ammo_ids.get(&key).cloned().unwrap_or_else(|| "?".into())));
-                ui.horizontal(|ui| {
-                    let w = app.s.weapon().clone();
-                    if !w.ammo.contains_key(&app.mem.ammo_pick) {
-                        app.mem.ammo_pick = app.s.ammo.clone();
-                    }
-                    egui::ComboBox::from_id_salt("ap").selected_text(app.mem.ammo_pick.clone()).show_ui(ui, |ui| {
-                        for k in w.ammo.keys() {
-                            ui.selectable_value(&mut app.mem.ammo_pick, k.clone(), k);
+            if !app.s.weapon_ids.is_empty() || !app.s.ammo_ids.is_empty() {
+                ui.collapsing(t("已学习的 ID", "Learned IDs"), |ui| {
+                    let mut del: Option<(bool, String)> = None;
+                    for (is_w, map) in [(true, &app.s.weapon_ids), (false, &app.s.ammo_ids)] {
+                        for (id, k) in map {
+                            ui.horizontal(|ui| {
+                                ui.label(format!("0x{id} → {}", if is_w { super::settings::weapon_name(k) } else { super::settings::ammo_name(k) }));
+                                if ui.small_button("✖").clicked() {
+                                    del = Some((is_w, id.clone()));
+                                }
+                            });
                         }
-                    });
-                    if ui.button(t("把当前 ID 设为此箭矢", "Assign current ID")).clicked() {
-                        app.s.ammo_ids.insert(key, app.mem.ammo_pick.clone());
-                        app.mark_dirty();
                     }
-                });
-            }
-            if !app.s.weapon_ids.is_empty() {
-                ui.collapsing(t("已学习的武器 ID", "Learned weapon IDs"), |ui| {
-                    let mut del = None;
-                    for (id, k) in &app.s.weapon_ids {
-                        ui.horizontal(|ui| {
-                            ui.label(format!("0x{id} → {k}"));
-                            if ui.small_button("✖").clicked() {
-                                del = Some(id.clone());
-                            }
-                        });
-                    }
-                    if let Some(d) = del {
-                        app.s.weapon_ids.remove(&d);
+                    if let Some((w, id)) = del {
+                        if w { app.s.weapon_ids.remove(&id); } else { app.s.ammo_ids.remove(&id); }
                         app.mark_dirty();
                     }
                 });

@@ -54,8 +54,8 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("CotwMod — theHunter: Call of the Wild")
-            .with_inner_size([1280.0, 820.0])
-            .with_min_inner_size([900.0, 600.0]),
+            .with_inner_size([1100.0, 720.0])
+            .with_min_inner_size([760.0, 480.0]),
         ..Default::default()
     };
     eframe::run_native("CotwMod", options, Box::new(|cc| Ok(Box::new(app::App::new(cc)))))

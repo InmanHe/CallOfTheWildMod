@@ -17,6 +17,12 @@ pub struct Projectile {
     pub drag_k: f64,
     pub wind_factor: f64,
     pub sight_height: f64,
+    #[serde(default = "default_g")]
+    pub gravity: f64,
+}
+
+fn default_g() -> f64 {
+    G
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -42,10 +48,10 @@ pub struct Solution {
 type V3 = [f64; 3];
 
 #[inline]
-fn accel(v: V3, w: V3, k: f64) -> V3 {
+fn accel(v: V3, w: V3, k: f64, g: f64) -> V3 {
     let r = [v[0] - w[0], v[1] - w[1], v[2] - w[2]];
     let s = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt();
-    [-k * s * r[0], -G - k * s * r[1], -k * s * r[2]]
+    [-k * s * r[0], -g - k * s * r[1], -k * s * r[2]]
 }
 
 #[inline]
@@ -55,25 +61,26 @@ fn add(a: V3, b: V3, s: f64) -> V3 {
 
 /// Returns (up offset, right offset, tof, speed) in the plane perpendicular
 /// to the LOS at the target's slant distance.
-fn fly(p: &Projectile, s: &Shot, bore: f64) -> Option<(f64, f64, f64, f64)> {
-    let dt = 0.0005;
+fn fly(p: &Projectile, s: &Shot, bore: f64, bore_h: f64) -> Option<(f64, f64, f64, f64)> {
+    // shorter step for fast bullets so each step is ~ the same distance
+    let dt = (0.04 / p.muzzle_velocity.max(1.0)).clamp(2e-5, 5e-4);
     let th = s.incline_deg.to_radians();
     let u = [th.cos(), th.sin(), 0.0];
     let n = [-th.sin(), th.cos(), 0.0];
     let mut pos = [-p.sight_height * n[0], -p.sight_height * n[1], 0.0];
     let e = th + bore;
-    let mut vel = [p.muzzle_velocity * e.cos(), p.muzzle_velocity * e.sin(), 0.0];
+    let mut vel = [p.muzzle_velocity * e.cos() * bore_h.cos(), p.muzzle_velocity * e.sin(), p.muzzle_velocity * e.cos() * bore_h.sin()];
     let w = [-s.headwind * p.wind_factor, 0.0, s.crosswind * p.wind_factor];
     let along = |q: V3| q[0] * u[0] + q[1] * u[1];
     let mut t = 0.0;
     while t < 20.0 {
-        let a1 = accel(vel, w, p.drag_k);
+        let a1 = accel(vel, w, p.drag_k, p.gravity);
         let v2 = add(vel, a1, dt / 2.0);
-        let a2 = accel(v2, w, p.drag_k);
+        let a2 = accel(v2, w, p.drag_k, p.gravity);
         let v3 = add(vel, a2, dt / 2.0);
-        let a3 = accel(v3, w, p.drag_k);
+        let a3 = accel(v3, w, p.drag_k, p.gravity);
         let v4 = add(vel, a3, dt);
-        let a4 = accel(v4, w, p.drag_k);
+        let a4 = accel(v4, w, p.drag_k, p.gravity);
         let mut np = pos;
         let mut nv = vel;
         for i in 0..3 {
@@ -101,10 +108,10 @@ fn fly(p: &Projectile, s: &Shot, bore: f64) -> Option<(f64, f64, f64, f64)> {
 pub fn zero_angle(p: &Projectile, zero: f64) -> Option<f64> {
     let s = Shot { distance: zero, ..Default::default() };
     let tof = zero / p.muzzle_velocity;
-    let mut a0 = (p.sight_height + 0.5 * G * tof * tof) / zero;
+    let mut a0 = (p.sight_height + 0.5 * p.gravity * tof * tof) / zero;
     let mut a1 = a0 * 1.05 + 1e-4;
-    let mut f0 = fly(p, &s, a0)?.0;
-    let mut f1 = fly(p, &s, a1)?.0;
+    let mut f0 = fly(p, &s, a0, 0.0)?.0;
+    let mut f1 = fly(p, &s, a1, 0.0)?.0;
     for _ in 0..40 {
         if f1.abs() < 1e-7 {
             return Some(a1);
@@ -116,17 +123,23 @@ pub fn zero_angle(p: &Projectile, zero: f64) -> Option<f64> {
         a0 = a1;
         f0 = f1;
         a1 = a2;
-        f1 = fly(p, &s, a1)?.0;
+        f1 = fly(p, &s, a1, 0.0)?.0;
     }
     (f1.abs() < 1e-4).then_some(a1)
 }
 
 pub fn solve(p: &Projectile, zero: f64, s: &Shot) -> Option<Solution> {
+    let bore = zero_angle(p, zero)?;
+    solve_bore(p, bore, 0.0, s)
+}
+
+/// Solve with a known bore angle (radians above / right of the LOS), e.g. the
+/// game's own zero angle from its weapon tuning.
+pub fn solve_bore(p: &Projectile, bore: f64, bore_h: f64, s: &Shot) -> Option<Solution> {
     if s.distance <= 0.5 {
         return Some(Solution { speed: p.muzzle_velocity, ..Default::default() });
     }
-    let bore = zero_angle(p, zero)?;
-    let (up, right, tof, speed) = fly(p, s, bore)?;
+    let (up, right, tof, speed) = fly(p, s, bore, bore_h)?;
     let drop = -up;
     Some(Solution {
         drop_m: drop,
@@ -142,10 +155,15 @@ pub fn solve(p: &Projectile, zero: f64, s: &Shot) -> Option<Solution> {
 /// marker on the target, the LOS sits above it by the hold, so iterate.
 /// If the incline is the live camera pitch, use [`solve`] directly.
 pub fn solve_hold(p: &Projectile, zero: f64, s: &Shot) -> Option<Solution> {
-    let mut sol = solve(p, zero, s)?;
+    let bore = zero_angle(p, zero)?;
+    solve_bore_hold(p, bore, 0.0, s)
+}
+
+pub fn solve_bore_hold(p: &Projectile, bore: f64, bore_h: f64, s: &Shot) -> Option<Solution> {
+    let mut sol = solve_bore(p, bore, bore_h, s)?;
     for _ in 0..2 {
         let eff = Shot { incline_deg: s.incline_deg + (sol.drop_mrad / 1000.0).to_degrees(), ..*s };
-        sol = solve(p, zero, &eff)?;
+        sol = solve_bore(p, bore, bore_h, &eff)?;
     }
     Some(sol)
 }
@@ -201,6 +219,8 @@ pub struct CalShot {
     pub ammo: String,
     pub distance: f64,
     pub zero: f64,
+    #[serde(default)]
+    pub zero_index: usize,
     pub incline_deg: f64,
     pub headwind: f64,
     pub crosswind: f64,
@@ -265,6 +285,69 @@ fn lin_solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
         x[r] = (b[r] - s) / a[r][r];
     }
     Some(x)
+}
+
+/// Generic bounded Levenberg-Marquardt: minimise |f(x)|^2.
+pub fn lm(x0: &[f64], lo: &[f64], hi: &[f64], f: &dyn Fn(&[f64]) -> Option<Vec<f64>>) -> Option<(Vec<f64>, f64, f64)> {
+    let m = x0.len();
+    let clamp = |x: &mut Vec<f64>| for i in 0..m { x[i] = x[i].clamp(lo[i], hi[i]) };
+    let mut x = x0.to_vec();
+    clamp(&mut x);
+    let mut r = f(&x)?;
+    let mut c: f64 = r.iter().map(|v| v * v).sum();
+    let mut lam = 1e-2;
+    for _ in 0..80 {
+        let mut jac = vec![vec![0.0; m]; r.len()];
+        for j in 0..m {
+            let h = x[j].abs().max(1e-3) * 1e-4;
+            let mut q = x.clone();
+            q[j] += h;
+            let rq = f(&q)?;
+            for (row, (a, b)) in jac.iter_mut().zip(rq.iter().zip(&r)) {
+                row[j] = (a - b) / h;
+            }
+        }
+        let mut a = vec![vec![0.0; m]; m];
+        let mut g = vec![0.0; m];
+        for (row, ri) in jac.iter().zip(&r) {
+            for i in 0..m {
+                g[i] += row[i] * ri;
+                for k in 0..m {
+                    a[i][k] += row[i] * row[k];
+                }
+            }
+        }
+        let mut improved = false;
+        let mut step_norm = 0.0;
+        for _ in 0..12 {
+            let mut aa = a.clone();
+            for i in 0..m {
+                aa[i][i] += lam * (a[i][i] + 1e-12);
+            }
+            let step = lin_solve(aa, g.iter().map(|v| -v).collect())?;
+            let mut q: Vec<f64> = x.iter().zip(&step).map(|(a, b)| a + b).collect();
+            clamp(&mut q);
+            if let Some(rq) = f(&q) {
+                let cq: f64 = rq.iter().map(|v| v * v).sum();
+                if cq < c {
+                    x = q;
+                    r = rq;
+                    c = cq;
+                    lam = (lam / 3.0).max(1e-9);
+                    improved = true;
+                    step_norm = step.iter().map(|v| v * v).sum::<f64>().sqrt();
+                    break;
+                }
+            }
+            lam *= 4.0;
+        }
+        if !improved || step_norm < 1e-10 {
+            break;
+        }
+    }
+    let rms = (c / r.len().max(1) as f64).sqrt();
+    let max = r.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+    Some((x, rms, max))
 }
 
 /// Fit velocity (+ drag with >= 3 distances, + wind factor if any shot had wind).
@@ -346,7 +429,7 @@ pub fn fit(initial: &Projectile, shots: &[CalShot]) -> Option<(Projectile, FitRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    const ARROW: Projectile = Projectile { muzzle_velocity: 80.0, drag_k: 0.0008, wind_factor: 1.0, sight_height: 0.08 };
+    const ARROW: Projectile = Projectile { muzzle_velocity: 80.0, drag_k: 0.0008, wind_factor: 1.0, sight_height: 0.08, gravity: G };
 
     #[test]
     fn zero_has_no_drop() {
@@ -359,7 +442,7 @@ mod tests {
     #[test]
     fn matches_python_reference() {
         // values printed by the Python version: `cotwmod table` hawkedge 420gr zero 40, wind 4 from left
-        let p = Projectile { muzzle_velocity: 81.0, drag_k: 0.0008, wind_factor: 1.0, sight_height: 0.08 };
+        let p = Projectile { muzzle_velocity: 81.0, drag_k: 0.0008, wind_factor: 1.0, sight_height: 0.08, gravity: G };
         let (hw, cw) = wind_components(4.0, 270.0);
         let s = solve(&p, 40.0, &Shot { distance: 70.0, incline_deg: 0.0, headwind: hw, crosswind: cw }).unwrap();
         assert!((s.drop_m * 100.0 - 160.7).abs() < 0.1, "{}", s.drop_m);
@@ -391,16 +474,16 @@ mod tests {
 
     #[test]
     fn calibration_recovers_truth() {
-        let truth = Projectile { muzzle_velocity: 73.0, drag_k: 0.0015, wind_factor: 0.7, sight_height: 0.08 };
+        let truth = Projectile { muzzle_velocity: 73.0, drag_k: 0.0015, wind_factor: 0.7, sight_height: 0.08, gravity: G };
         let mut shots = vec![];
         for d in [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0] {
             for (hw, cw) in [(0.0, 0.0), (0.0, 4.0), (3.0, -2.0)] {
                 let s = solve(&truth, 30.0, &Shot { distance: d, incline_deg: 0.0, headwind: hw, crosswind: cw }).unwrap();
-                shots.push(CalShot { weapon: "w".into(), ammo: "a".into(), distance: d, zero: 30.0, incline_deg: 0.0,
+                shots.push(CalShot { weapon: "w".into(), ammo: "a".into(), distance: d, zero: 30.0, zero_index: 0, incline_deg: 0.0,
                     headwind: hw, crosswind: cw, drop_mrad: s.drop_mrad, drift_mrad: s.drift_mrad });
             }
         }
-        let guess = Projectile { muzzle_velocity: 90.0, drag_k: 0.0005, wind_factor: 1.0, sight_height: 0.08 };
+        let guess = Projectile { muzzle_velocity: 90.0, drag_k: 0.0005, wind_factor: 1.0, sight_height: 0.08, gravity: G };
         let (f, rep) = fit(&guess, &shots).unwrap();
         assert!((f.muzzle_velocity - 73.0).abs() / 73.0 < 0.01, "{f:?}");
         assert!((f.drag_k - 0.0015).abs() / 0.0015 < 0.05, "{f:?}");

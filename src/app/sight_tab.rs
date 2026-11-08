@@ -1,91 +1,118 @@
 use super::hotkeys::KEYS;
-use super::settings::Lang;
+use super::settings::{ammo_name, weapon_name};
 use super::{tr, App};
 use cotwmod::ballistics::{self, wind_components, Shot};
+use cotwmod::gamedata::{self, gd, Engine, Kind};
+use cotwmod::memory::binding::Field;
 use eframe::egui::{self, Color32, RichText};
+
+thread_local! {
+    static FILTER: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+}
 
 pub fn ui(app: &mut App, ui: &mut egui::Ui) {
     let lang = app.s.lang;
     let t = |zh, en| tr(lang, zh, en);
     let mut changed = false;
+    let g = gd();
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.columns(2, |cols| {
             // ---------------------------------------------------- left column
             let ui = &mut cols[0];
-            ui.heading(t("武器", "Weapon"));
-            egui::Grid::new("weapon").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
+            ui.heading(t("当前武器（全部来自游戏数据）", "Current weapon (all from game data)"));
+            let auto = app.s.use_live && app.s.auto_weapon && app.live.raw.contains_key(&Field::WeaponId);
+            if auto {
+                ui.colored_label(Color32::from_rgb(80, 200, 120), t("● 由内存自动识别手持武器", "● Held weapon detected from memory"));
+            }
+            ui.horizontal(|ui| {
                 ui.label(t("武器", "Weapon"));
-                let wname = |w: &super::settings::Weapon| if lang == Lang::Zh { w.name_zh.clone() } else { w.name_en.clone() };
-                let cur = wname(app.s.weapon());
-                egui::ComboBox::from_id_salt("w").width(260.0).selected_text(cur).show_ui(ui, |ui| {
-                    for (k, w) in app.s.weapons.clone() {
-                        changed |= ui.selectable_value(&mut app.s.weapon, k, wname(&w)).changed();
-                    }
-                });
-                ui.end_row();
-                if changed {
-                    app.s.fix();
-                }
-                ui.label(t("箭矢", "Ammo"));
-                let w = app.s.weapon().clone();
-                let an = |a: &super::settings::Ammo| if lang == Lang::Zh { a.name_zh.clone() } else { a.name_en.clone() };
-                egui::ComboBox::from_id_salt("a").width(260.0).selected_text(an(&w.ammo[&app.s.ammo])).show_ui(ui, |ui| {
-                    for (k, a) in &w.ammo {
-                        let label = format!("{}{}", an(a), if a.calibrated { " ✔" } else { "" });
-                        changed |= ui.selectable_value(&mut app.s.ammo, k.clone(), label).changed();
-                    }
-                });
-                ui.end_row();
-                ui.label(t("归零距离", "Zero"));
-                ui.horizontal(|ui| {
-                    for z in &w.zero_options {
-                        changed |= ui.selectable_value(&mut app.s.zero, *z, format!("{z:.0} m")).changed();
-                    }
-                });
-                ui.end_row();
-                if w.magnification.len() > 1 {
-                    ui.label(t("倍率", "Zoom"));
-                    ui.horizontal(|ui| {
-                        for (i, m) in w.magnification.iter().enumerate() {
-                            changed |= ui.selectable_value(&mut app.s.mag_index, i, format!("{m}x")).changed();
+                let mut pick: Option<String> = None;
+                egui::ComboBox::from_id_salt("w").width(330.0).height(420.0).selected_text(weapon_name(&app.s.weapon)).show_ui(ui, |ui| {
+                    FILTER.with(|f| {
+                        let mut f = f.borrow_mut();
+                        ui.add(egui::TextEdit::singleline(&mut *f).hint_text(t("搜索…", "search…")).desired_width(300.0));
+                        let q = f.to_lowercase();
+                        if !app.s.recent.is_empty() && q.is_empty() {
+                            ui.label(RichText::new(t("最近使用", "Recent")).small());
+                            for k in app.s.recent.clone() {
+                                if ui.selectable_label(k == app.s.weapon, weapon_name(&k)).clicked() {
+                                    pick = Some(k);
+                                }
+                            }
+                            ui.separator();
+                        }
+                        let mut list: Vec<(&String, &gamedata::Weapon)> = g.weapons.iter()
+                            .filter(|(k, w)| q.is_empty() || w.display.to_lowercase().contains(&q) || k.contains(&q)).collect();
+                        list.sort_by(|a, b| a.1.display.cmp(&b.1.display));
+                        for (k, w) in list {
+                            if ui.selectable_label(*k == app.s.weapon, &w.display).clicked() {
+                                pick = Some(k.clone());
+                            }
                         }
                     });
-                    ui.end_row();
+                });
+                if let Some(k) = pick {
+                    app.s.set_weapon(&k);
+                    changed = true;
                 }
             });
-            ui.colored_label(Color32::LIGHT_YELLOW, t("⚠ 归零距离必须与游戏内设置一致。", "⚠ The zero must match the in-game setting."));
-            {
-                let am = app.s.weapons[&app.s.weapon].ammo.get_mut(&app.s.ammo).unwrap();
-                ui.collapsing(t("弹道参数（校准会自动填写）", "Ballistic parameters (calibration fills these)"), |ui| {
-                    egui::Grid::new("proj").show(ui, |ui| {
-                        ui.label(t("初速 m/s", "Velocity m/s"));
-                        changed |= ui.add(egui::DragValue::new(&mut am.proj.muzzle_velocity).range(10.0..=400.0).speed(0.1)).changed();
-                        ui.end_row();
-                        ui.label(t("阻力系数 k", "Drag k"));
-                        changed |= ui.add(egui::DragValue::new(&mut am.proj.drag_k).range(0.0..=0.05).speed(0.00001).max_decimals(6)).changed();
-                        ui.end_row();
-                        ui.label(t("风偏系数", "Wind factor"));
-                        changed |= ui.add(egui::DragValue::new(&mut am.proj.wind_factor).range(0.0..=10.0).speed(0.01)).changed();
-                        ui.end_row();
-                        ui.label(t("瞄具高度 m", "Sight height m"));
-                        changed |= ui.add(egui::DragValue::new(&mut am.proj.sight_height).range(0.0..=0.5).speed(0.001)).changed();
-                        ui.end_row();
+            let w = g.weapons[&app.s.weapon].clone();
+            let tun = &g.tunings[&w.tuning];
+            ui.horizontal(|ui| {
+                ui.label(t("弹药", "Ammo"));
+                egui::ComboBox::from_id_salt("a").width(330.0).selected_text(ammo_name(&app.s.ammo)).show_ui(ui, |ui| {
+                    for k in &w.ammo {
+                        changed |= ui.selectable_value(&mut app.s.ammo, k.clone(), ammo_name(k)).changed();
+                    }
+                });
+            });
+            ui.horizontal(|ui| {
+                ui.label(t("归零", "Zero"));
+                for (i, z) in tun.zeros.iter().enumerate() {
+                    changed |= ui.selectable_value(&mut app.s.zero_index, i, format!("{:.0} m", z.distance)).changed();
+                }
+                if app.live.values.contains_key(&Field::ZeroIndex) {
+                    ui.colored_label(Color32::from_rgb(80, 200, 120), "● live");
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(t("瞄具倍率", "Scope zoom"));
+                for (i, m) in app.s.mags.clone().iter().enumerate() {
+                    changed |= ui.selectable_value(&mut app.s.mag_index, i, format!("{m}x")).changed();
+                }
+            });
+            ui.label(RichText::new(t("⚠ 归零距离需与游戏内一致（或在“内存扫描”绑定“归零档位”自动同步）。",
+                "⚠ The zero must match the game (or bind 'Zero index' on the Memory tab to sync it).")).small().color(Color32::LIGHT_YELLOW));
+
+            if let Some(st) = gamedata::setup(&app.s.weapon, &app.s.ammo, app.s.zero_index, &app.s.engine) {
+                let a = &g.ammo[&app.s.ammo];
+                ui.collapsing(t("游戏弹道数据", "Game ballistic data"), |ui| {
+                    egui::Grid::new("gd").num_columns(2).show(ui, |ui| {
+                        ui.label(t("动能", "Kinetic energy")); ui.label(format!("{:.0} J", st.ke)); ui.end_row();
+                        ui.label(t("弹头质量", "Projectile mass")); ui.label(format!("{:.1} g", a.mass * 1000.0)); ui.end_row();
+                        ui.label(t("直径 / 阻力系数", "Diameter / Cd")); ui.label(format!("{:.1} mm / {:.3}", a.diameter * 1000.0, a.cd)); ui.end_row();
+                        ui.label(t("初速", "Muzzle velocity")); ui.label(format!("{:.1} m/s", st.v0)); ui.end_row();
+                        ui.label(t("游戏归零角", "Game zero angle")); ui.label(format!("{:.3}°  ({:.0} m)", st.bore.to_degrees(), st.zero_distance)); ui.end_row();
+                        ui.label(t("重力", "Gravity")); ui.label(format!("{:.2} m/s²", st.proj.gravity)); ui.end_row();
+                        ui.label(t("速度随机偏差", "Velocity deviance")); ui.label(format!("{:.3}", a.velocity_deviance)); ui.end_row();
+                        ui.label(t("最大射程", "Max range")); ui.label(format!("{:.0} m", a.max_range)); ui.end_row();
                     });
                 });
             }
 
             ui.separator();
             ui.heading(t("输入", "Inputs"));
-            changed |= ui.checkbox(&mut app.s.use_live, t("使用内存实时数据（在“内存扫描”页绑定）", "Use live memory values (bind them on the Memory tab)")).changed();
-            changed |= ui.checkbox(&mut app.s.auto_weapon, t("根据内存自动识别手持武器/箭矢", "Auto-detect held weapon/ammo from memory")).changed();
+            changed |= ui.checkbox(&mut app.s.use_live, t("使用内存实时数据", "Use live memory values")).changed();
+            changed |= ui.checkbox(&mut app.s.auto_weapon, t("自动识别手持武器 / 弹药 / 归零", "Auto-detect held weapon / ammo / zero")).changed();
+            let max_d = if gamedata::kind(&app.s.weapon) == Kind::Bow { 150.0 } else { 800.0 };
             egui::Grid::new("manual").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
                 ui.label(t("距离 m（手动）", "Distance m (manual)"));
-                changed |= ui.add(egui::Slider::new(&mut app.s.distance, 1.0..=150.0).step_by(1.0)).changed();
+                changed |= ui.add(egui::Slider::new(&mut app.s.distance, 1.0..=max_d).step_by(1.0)).changed();
                 ui.end_row();
-                ui.label(t("目标俯仰角 °（手动）", "Target incline ° (manual)"));
+                ui.label(t("目标俯仰 °（手动）", "Target incline ° (manual)"));
                 changed |= ui.add(egui::Slider::new(&mut app.s.incline, -60.0..=60.0).step_by(1.0)).changed();
                 ui.end_row();
-                ui.label(t("风来向 °（0=迎面, 90=右, 270=左）", "Wind from ° (0=face, 90=right, 270=left)"));
+                ui.label(t("风来向 °（0迎面 90右 270左）", "Wind from ° (0 face, 90 R, 270 L)"));
                 changed |= ui.add(egui::Slider::new(&mut app.s.wind_rel, 0.0..=359.0).step_by(5.0)).changed();
                 ui.end_row();
                 ui.label(t("风力等级", "Wind level"));
@@ -108,13 +135,15 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                     ui.label(t("屏幕偏移", "Screen offset")); ui.label(format!("{:+.0}, {:+.0} px", a.dx, a.dy)); ui.end_row();
                     ui.label(t("飞行时间", "Time of flight")); ui.label(format!("{:.3} s", a.tof)); ui.end_row();
                 });
+            } else {
+                ui.label(t("此武器/弹药组合没有可用的弹道数据。", "No ballistic data for this weapon/ammo."));
             }
 
             // ---------------------------------------------------- right column
             let ui = &mut cols[1];
             ui.heading(t("叠加层", "Overlay"));
             changed |= ui.checkbox(&mut app.s.overlay_on, t("显示落点叠加层（Alt+F6）", "Show impact overlay (Alt+F6)")).changed();
-            ui.label(RichText::new(t("游戏需设为“无边框窗口”。叠加层不会拦截鼠标。", "Run the game in Borderless mode. The overlay is click-through.")).small());
+            ui.label(RichText::new(t("游戏需设为“无边框窗口”。叠加层不拦截鼠标。", "Run the game borderless. The overlay is click-through.")).small());
             changed |= ui.checkbox(&mut app.s.show_ladder, t("显示距离刻度", "Show range ladder")).changed();
             ui.horizontal(|ui| {
                 ui.label(t("标记颜色", "Marker colour"));
@@ -150,9 +179,23 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
             });
 
             ui.separator();
-            ui.heading(t("校准", "Calibration"));
-            ui.label(t("在靶场对已知距离射击：Alt+F11 进入校准模式，Alt+方向键把红框移到箭的落点，Alt+Insert 记录。每个距离射 2-3 箭，至少 3 个距离。",
-                "At a range: Alt+F11 = calibration mode, Alt+arrows move the red box onto the arrow, Alt+Insert records. 2-3 arrows per distance, at least 3 distances."));
+            ui.heading(t("引擎常数与校准", "Engine constants & calibration"));
+            ui.label(RichText::new(t("这些是游戏引擎全局常数（不随武器变化），默认值由游戏全部武器的归零表拟合得到。用任意武器校准一次即适用于所有武器。",
+                "Engine-wide constants (same for every weapon), fitted from the zero tables of all weapons in the game. Calibrating with any weapon improves all of them.")).small());
+            egui::Grid::new("engine").show(ui, |ui| {
+                let e = &mut app.s.engine;
+                ui.label(t("发射点低于视线 m", "Launch below eye m")); changed |= ui.add(egui::DragValue::new(&mut e.launch_height).range(-0.3..=0.3).speed(0.001).max_decimals(3)).changed(); ui.end_row();
+                ui.label(t("阻力倍数", "Drag multiplier")); changed |= ui.add(egui::DragValue::new(&mut e.drag_mul).range(0.0..=10.0).speed(0.01)).changed(); ui.end_row();
+                ui.label(t("弓弩速度效率", "Bow velocity eff.")); changed |= ui.add(egui::DragValue::new(&mut e.vel_eff_bow).range(0.5..=1.5).speed(0.001).max_decimals(3)).changed(); ui.end_row();
+                ui.label(t("枪械速度效率", "Gun velocity eff.")); changed |= ui.add(egui::DragValue::new(&mut e.vel_eff_gun).range(0.5..=1.5).speed(0.001).max_decimals(3)).changed(); ui.end_row();
+                ui.label(t("风偏系数", "Wind factor")); changed |= ui.add(egui::DragValue::new(&mut e.wind_factor).range(0.0..=10.0).speed(0.01)).changed(); ui.end_row();
+            });
+            if ui.small_button(t("恢复默认", "Reset to defaults")).clicked() {
+                app.s.engine = Engine::default();
+                changed = true;
+            }
+            ui.label(t("校准：靶场对已知距离射击，Alt+F11 进入校准模式，Alt+方向键把红框移到弹着点，Alt+Insert 记录。",
+                "Calibrate: shoot known distances, Alt+F11 = calibration mode, Alt+arrows move the red box to the hit, Alt+Insert records."));
             ui.horizontal(|ui| {
                 if ui.button(if app.calib_mode { t("退出校准模式", "Leave calibration mode") } else { t("进入校准模式", "Enter calibration mode") }).clicked() {
                     app.calib_mode = !app.calib_mode;
@@ -160,16 +203,13 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                 if ui.button(t("记录一发", "Record shot")).clicked() {
                     app.record_calibration_shot();
                 }
+                ui.label(format!("{}: {}", t("记录", "Shots"), app.s.cal_shots.len()));
             });
-            let (w, a) = (app.s.weapon.clone(), app.s.ammo.clone());
-            let mine: Vec<usize> = app.s.cal_shots.iter().enumerate().filter(|(_, s)| s.weapon == w && s.ammo == a).map(|(i, _)| i).collect();
-            ui.label(format!("{}: {}", t("当前武器+箭矢的记录", "Shots for this weapon+ammo"), mine.len()));
             let mut del = None;
-            egui::ScrollArea::vertical().id_salt("shots").max_height(140.0).show(ui, |ui| {
-                for &i in &mine {
-                    let s = &app.s.cal_shots[i];
+            egui::ScrollArea::vertical().id_salt("shots").max_height(120.0).show(ui, |ui| {
+                for (i, s) in app.s.cal_shots.iter().enumerate() {
                     ui.horizontal(|ui| {
-                        ui.label(format!("{:.0} m  z{:.0}  {:+.2}/{:+.2} mrad  wind {:+.1}/{:+.1}", s.distance, s.zero, s.drop_mrad, s.drift_mrad, s.headwind, s.crosswind));
+                        ui.label(RichText::new(format!("{} | {:.0} m z{:.0} | {:+.2}/{:+.2} mrad", weapon_name(&s.weapon), s.distance, s.zero, s.drop_mrad, s.drift_mrad)).small());
                         if ui.small_button("✖").clicked() {
                             del = Some(i);
                         }
@@ -180,16 +220,11 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
                 app.s.cal_shots.remove(i);
                 changed = true;
             }
-            if ui.add_enabled(!mine.is_empty(), egui::Button::new(t("拟合参数", "Fit parameters"))).clicked() {
-                let shots: Vec<_> = mine.iter().map(|&i| app.s.cal_shots[i].clone()).collect();
-                let init = app.s.projectile();
-                match ballistics::fit(&init, &shots) {
-                    Some((p, rep)) => {
-                        let am = app.s.weapons[&w].ammo.get_mut(&a).unwrap();
-                        am.proj = p;
-                        am.calibrated = true;
-                        app.status = format!("{} v0={:.1} k={:.5} wind={:.2}  rms={:.3} mrad ({})",
-                            t("校准完成", "Calibrated"), p.muzzle_velocity, p.drag_k, p.wind_factor, rep.rms_mrad, rep.params.join(","));
+            if ui.add_enabled(app.s.cal_shots.len() >= 2, egui::Button::new(t("拟合引擎常数", "Fit engine constants"))).clicked() {
+                match gamedata::fit_engine(&app.s.engine, &app.s.cal_shots) {
+                    Some((e, rms, max, names)) => {
+                        app.s.engine = e;
+                        app.status = format!("{} rms {:.3} mrad, max {:.3} ({})", t("校准完成", "Calibrated"), rms, max, names.join(", "));
                         changed = true;
                     }
                     None => app.status = t("拟合失败", "Fit failed").into(),
@@ -198,25 +233,29 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
 
             ui.separator();
             ui.collapsing(t("弹道表", "Trajectory table"), |ui| {
-                let p = app.s.projectile();
-                let (hw, cw) = wind_components(app.s.wind_levels.get(app.s.wind_level).copied().unwrap_or(0.0), app.s.wind_rel);
-                egui::Grid::new("table").striped(true).show(ui, |ui| {
-                    for h in [t("距离", "Dist"), t("下坠 cm", "Drop cm"), "mrad", t("偏移 cm", "Drift cm"), "mrad", t("时间 s", "TOF s")] {
-                        ui.strong(h);
-                    }
-                    ui.end_row();
-                    for d in (5..=100).step_by(5) {
-                        if let Some(r) = ballistics::solve(&p, app.s.zero, &Shot { distance: d as f64, incline_deg: 0.0, headwind: hw, crosswind: cw }) {
-                            ui.label(format!("{d}"));
-                            ui.label(format!("{:.1}", r.drop_m * 100.0));
-                            ui.label(format!("{:.2}", r.drop_mrad));
-                            ui.label(format!("{:.1}", r.drift_m * 100.0));
-                            ui.label(format!("{:.2}", r.drift_mrad));
-                            ui.label(format!("{:.3}", r.tof));
-                            ui.end_row();
+                if let Some(st) = gamedata::setup(&app.s.weapon, &app.s.ammo, app.s.zero_index, &app.s.engine) {
+                    let (hw, cw) = wind_components(app.s.wind_levels.get(app.s.wind_level).copied().unwrap_or(0.0), app.s.wind_rel);
+                    let step = if gamedata::kind(&app.s.weapon) == Kind::Bow { 5 } else { 25 };
+                    egui::Grid::new("table").striped(true).show(ui, |ui| {
+                        for h in [t("距离", "Dist"), t("下坠 cm", "Drop cm"), "mrad", t("偏移 cm", "Drift cm"), "mrad", t("时间 s", "TOF s"), "m/s"] {
+                            ui.strong(h);
                         }
-                    }
-                });
+                        ui.end_row();
+                        for i in 1..=20 {
+                            let d = (i * step) as f64;
+                            if let Some(r) = ballistics::solve_bore(&st.proj, st.bore, st.bore_h, &Shot { distance: d, incline_deg: 0.0, headwind: hw, crosswind: cw }) {
+                                ui.label(format!("{d:.0}"));
+                                ui.label(format!("{:.1}", r.drop_m * 100.0));
+                                ui.label(format!("{:.2}", r.drop_mrad));
+                                ui.label(format!("{:.1}", r.drift_m * 100.0));
+                                ui.label(format!("{:.2}", r.drift_mrad));
+                                ui.label(format!("{:.3}", r.tof));
+                                ui.label(format!("{:.0}", r.speed));
+                                ui.end_row();
+                            }
+                        }
+                    });
+                }
             });
             ui.collapsing(t("热键", "Hotkeys"), |ui| {
                 for (_, k, a) in KEYS {

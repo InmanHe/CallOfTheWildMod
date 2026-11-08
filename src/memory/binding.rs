@@ -68,6 +68,7 @@ impl Binding {
 pub enum Field {
     WeaponId,
     AmmoId,
+    ZeroIndex,
     AimDistance,
     CameraPitch,
     CameraYaw,
@@ -78,9 +79,10 @@ pub enum Field {
 }
 
 impl Field {
-    pub const ALL: [Field; 9] = [
+    pub const ALL: [Field; 10] = [
         Field::WeaponId,
         Field::AmmoId,
+        Field::ZeroIndex,
         Field::AimDistance,
         Field::CameraPitch,
         Field::CameraYaw,
@@ -93,6 +95,7 @@ impl Field {
         match self {
             Field::WeaponId => "weapon_id",
             Field::AmmoId => "ammo_id",
+            Field::ZeroIndex => "zero_index",
             Field::AimDistance => "aim_distance",
             Field::CameraPitch => "camera_pitch",
             Field::CameraYaw => "camera_yaw",

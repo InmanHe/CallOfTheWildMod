@@ -5,3 +5,6 @@
 - **deca** — Copyright (c) 2018-2019 Krzysztof Kamieniecki, MIT. ADF format reader (ported to Rust in `src/adf.rs`).
 - Fur seed algorithm cracked by xpltive / 0xSthSth1337 (as used by APC).
 - Rust crates: egui/eframe, serde, flate2, rand, indexmap, anyhow, windows-sys (MIT / Apache-2.0).
+- Weapon and ammunition ballistic numbers in `data/ballistics.json` (`tools/gen_ballistics.py`) are read from
+  theHunter: Call of the Wild game data files (© Expansive Worlds / Avalanche Studios), build 2777186, using the
+  extracted files distributed with cpypasta's COTW Mod Builder. Only numeric parameters and names are included.
