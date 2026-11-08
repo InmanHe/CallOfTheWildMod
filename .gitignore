@@ -1,10 +1,6 @@
+/target/
+tools/fakegame/target/
+tools/fakegame/.cargo/
 __pycache__/
 *.pyc
-*.egg-info/
-build/
-dist/
-.venv/
-.pytest_cache/
-config/calibrated.json
-config/calibration_shots.json
-config/*.tmp
+cotwmod_selftest.txt

@@ -1,141 +1,75 @@
-# CallOfTheWildMod
+# CotwMod — 獵人：荒野的召喚 輔助工具
 
-《獵人：荒野的召喚》(theHunter: Call of the Wild) 外部輔助工具，**不修改任何遊戲檔案**：
+《theHunter: Call of the Wild》單人娛樂用輔助工具，Rust 編寫，單個 `CotwMod.exe`，**不修改任何遊戲檔案**。介面支援 **簡體中文 / English**。
 
-1. **弓弩預測落點瞄具**：複合弓、傳統弓（反曲弓/長弓）、十字弩。透明疊加層實時畫出箭/弩箭的落點，計入
-   - 遊戲自身的**歸零距離**（每把武器的歸零選項，與 Zeroing 技能一致）
-   - 距離、俯仰角（上坡/下坡）、**風向與風速**（頂風/順風改變下墜，側風產生偏移）
-   - 每種武器 + 箭矢組合可在靶場**校準**，擬合出遊戲實際使用的初速、阻力和風偏係數
-2. **種群數量與珍稀度控制**：用一個 YAML 配置檔設定每個保護區、每個物種的公/母數量、性別比例、稀有毛色、鑽石、巨獸(Great One) 數量，一條命令套用，自動備份、可一鍵還原。
+| 功能 | 說明 |
+|---|---|
+| 🦌 **種群編輯器** | 可視化查看與修改每個保護區、每個物種的公/母數量、性別轉換、稀有毛色、鑽石、巨獸；也可逐隻修改動物的毛色、等級、性別。自動備份，一鍵還原。 |
+| 🏹 **弓弩落點瞄具** | 複合弓、反曲弓/長弓、十字弩。透明疊加層實時畫出箭的落點，計入遊戲歸零距離、距離、俯仰、風向風速；靶場校準後擬合出遊戲實際的彈道參數。 |
+| 🔍 **內存掃描器** | 內建類 Cheat Engine 的數值掃描（精確/範圍/未知初始值/增大/減小/改變/未改變）和**指針掃描**，用來找到手持武器、瞄準距離、風、視角等數值並綁定，供瞄具自動使用。 |
+| 🔫 **手持武器識別** | 綁定武器 ID 後，切換武器時自動學習並切換對應的彈道配置。 |
+| 👁 **獵物可視距離** | 綁定可視距離地址後，可在 400–800 m 間調整並持續鎖定。 |
 
-> ⚠️ 只建議在單人模式使用。多人遊戲中使用種群修改或瞄準輔助對其他玩家不公平。
+> 僅供單人模式使用。
 
----
+## 下載與執行
 
-## 運作方式（為什麼不需要改遊戲檔案）
+到 [Releases](https://github.com/InmanHe/CallOfTheWildMod/releases) 下載 `CotwMod-vX.Y.Z-windows-x64.zip`，解壓後直接執行 `CotwMod.exe`。
 
-| 功能 | 實作 | 接觸到的東西 |
-|---|---|---|
-| 瞄具 | 獨立的置頂、滑鼠穿透透明視窗，畫在遊戲畫面上方 | 只**讀取**遊戲進程記憶體（可選），不寫入、不注入 |
-| 種群 | 修改存檔資料夾內的 `animal_population_N` 存檔 | 只動你的**存檔**，遊戲安裝目錄完全不碰 |
+- 遊戲設為 **無邊框視窗 (Borderless)**，疊加層才能顯示在遊戲上方。
+- 內存功能如果顯示「未連接」，請以 **系統管理員身分** 執行 CotwMod.exe。
+- 疊加層由主視窗驅動：主視窗可以放在遊戲後面，但**不要最小化**。
+- 設定保存在 `%APPDATA%\CotwMod\settings.json`，種群備份在 `%APPDATA%\CotwMod\backups\`。
 
-種群存檔（ADF 格式）的解析使用 [APC – Animal Population Changer Revived](https://github.com/RyMaxim/apc)（MIT），作為 git 子模組放在 `third_party/apc`。
+## 一、種群編輯器
 
----
+1. **先退出遊戲到桌面**（遊戲退出時會覆寫種群存檔）。
+2. 存檔資料夾會自動偵測（`文件\Avalanche Studios\COTW\Saves\<數字>`）；選擇保護區 → 「讀取存檔」。
+3. 物種表格中直接設定：公/母目標數量、母→公、公→母、+稀有毛色、+鑽石（可勾選同時給稀有毛色）、+巨獸，按「應用」。
+4. 點物種名稱可列出每一隻動物：修改毛色、→鑽石、→巨獸、換性別。
+5. 「保存到遊戲」才會寫入。第一次修改前的原檔永久保存在 `backups\original\`，每次保存另有帶時間戳的備份；「還原原始存檔」一鍵恢復。
 
-## 安裝（Windows）
+限制（來自遊戲本身）：每個動物群組最多 30 隻；部分使用 TruRACS 角型評分的物種，鑽石偶爾會變成金。
 
-需要 Python 3.12 以上。
+## 二、弓弩落點瞄具
 
-```bat
-git clone --recurse-submodules https://github.com/InmanHe/CallOfTheWildMod
-cd CallOfTheWildMod
-pip install -e .
-```
-
-遊戲設定為 **無邊框視窗 (Borderless)** 或視窗模式 — 疊加層無法畫在獨佔全螢幕上。
-
----
-
-## 一、預測落點瞄具
-
-```bat
-cotwmod aim
-```
-
-畫面中央小十字 = 武器自身的瞄準基準（歸零針/中心點）；**綠色圓圈 = 箭的實際落點**。把綠圈放在獵物要害上放箭即可。左上角面板顯示武器、歸零、距離、風、需要的抬高量；`●` 表示該數值是從遊戲實時讀取，`○` 表示手動輸入。
-
-### 熱鍵（預設需按住左 Alt）
+1. 「弓弩瞄具」頁選擇武器、箭矢、**與遊戲內一致的歸零距離**，勾選「顯示落點疊加層」（或 Alt+F6）。
+2. 畫面中央小十字 = 武器的瞄準基準；**綠色圓圈 = 箭的落點**。把綠圈放在獵物要害上放箭。
+3. 距離 / 俯仰 / 風：已在「內存掃描」綁定的欄位自動實時使用（面板上 ● = 實時，○ = 手動），其餘用熱鍵手動輸入。
+4. **校準**：內建彈道參數只是估計值。在靶場對已知距離射擊，Alt+F11 進入校準模式，Alt+方向鍵把紅框移到箭插入的位置，Alt+Insert 記錄；每個距離 2–3 箭、至少 3 個距離，按「擬合參數」。詳見 [docs/CALIBRATION.md](docs/CALIBRATION.md)。
 
 | 熱鍵 | 功能 |
 |---|---|
 | Alt+F6 | 顯示/隱藏疊加層 |
-| Alt+F7 / F8 / F9 | 切換武器 / 箭矢 / 歸零距離（**務必與遊戲內設定一致**） |
-| Alt+F10 | 切換倍率（十字弩瞄準鏡） |
-| Alt+PgUp / PgDn | 距離 ±1 m |
-| Alt+Home / End | 距離 ±5 m |
-| Alt+← / → | 風向（相對於你的朝向）每次轉 45° |
-| Alt+↑ / ↓ | 風力等級 |
-| Alt+F11 | 校準模式開關 |
-| Alt+Insert | 記錄一次校準射擊 |
+| Alt+F7 / F8 / F9 / F10 | 切換武器 / 箭矢 / 歸零 / 倍率 |
+| Alt+PgUp / PgDn, Alt+Home / End | 距離 ±1 m / ±5 m |
+| Alt+← / → | 風來向旋轉 45°（校準模式下移動紅框） |
+| Alt+↑ / ↓ | 風力等級（校準模式下移動紅框） |
+| Alt+F11 / Alt+Insert | 校準模式 / 記錄一發 |
 
-熱鍵可在 `config/settings.json` 修改；`hotkey_modifier` 設為 `null` 可取消 Alt。
+**關於精度**：校準正確時，預測的是箭的**平均落點**，與遊戲彈道模型一致（RK4 數值積分）。遊戲本身對弓箭有隨機散佈、準星晃動和心率影響，這部分是遊戲刻意設計的隨機性，任何外部工具都無法預知。
 
-### 輸入來源：手動 或 實時記憶體讀取
+## 三、內存掃描與綁定
 
-- **手動模式**（開箱即用）：用遊戲的測距儀/望遠鏡讀距離，再用熱鍵輸入距離與風。
-- **記憶體模式**：在 `config/offsets.json` 填入距離、鏡頭俯仰/朝向、風向、風速的位址後，這些數值自動實時更新，風向會自動換算成相對方向。每個欄位獨立：找到幾個就用幾個，其餘仍用手動值。
-  遊戲更新會改變位址，所以倉庫**不附帶**位址；按 [docs/OFFSETS_GUIDE.md](docs/OFFSETS_GUIDE.md) 用 Cheat Engine 找，建議用 AOB 特徵碼，遊戲小更新後通常仍有效。
-  `cotwmod offsets` 可實時列印讀到的數值來驗證。
+各數值的地址會隨遊戲版本變化，因此程式**不內建地址**，而是內建掃描器讓你自己找，找一次、做指針掃描後長期有效。完整步驟見 [docs/MEMORY_GUIDE.md](docs/MEMORY_GUIDE.md)。
 
-### 校準（達到精準的關鍵）
+- **手持武器**：4 Bytes，「未知初始值」→ 切換武器「已改變」→ 不切換「未改變」，重複幾輪。綁定後在「手持武器識別」中把每個 ID 對應到武器，之後切換武器會自動套用。
+- **瞄準距離 / 俯仰 / 朝向 / 風 / FOV**：都有逐項提示（頁面中「如何找各個數值」）。
+- **可視距離**：找到後可綁定多個地址，滑桿 400–800 m，勾選「持續鎖定」。寫錯地址可能使遊戲崩潰，先存檔。
+- 找到地址後點「指針掃描」，選最上面（偏移最小）的指針鏈綁定，遊戲重啟後仍有效。
 
-`config/weapons.json` 中的初速/阻力只是**起始估計值**，遊戲內部數據並未公開。精準度來自校準：在靶場對已知距離射擊，記錄箭落點，擬合出遊戲實際的彈道參數。詳見 [docs/CALIBRATION.md](docs/CALIBRATION.md)。
+診斷：`CotwMod.exe --selftest` 會嘗試連接遊戲並把結果寫到 `cotwmod_selftest.txt`。
 
-```bat
-cotwmod calibrate                     # 擬合並寫入 config/calibrated.json
-cotwmod table -w hawkedge_cb70 -a arrow_420gr -z 40 --wind 4   # 檢查彈道表
+## 從原始碼編譯
+
+```bash
+cargo test                          # 核心邏輯測試（Linux / Windows 均可）
+cargo build --release               # 在 Windows 上
+./build-windows.sh                  # 在 Linux 上交叉編譯（mingw-w64 + rust-src）
 ```
 
-### 關於「100% 精準」
+`tools/` 內有差分測試：用原版 Python APC 讀取 Rust 修改過的種群檔，逐欄位比對（`python3 tools/make_fixture.py && cargo test && python3 tools/difftest.py`）。
 
-只要參數校準正確，預測的是**箭的平均落點**，數學上與遊戲模型一致（RK4 數值積分，誤差遠小於 0.01 mrad）。但遊戲本身對弓箭加入了**隨機散佈**、準星晃動、心率影響，這些是遊戲故意設定的隨機性，任何外部工具都無法預知。實際效果：綠圈精確指向散佈中心，散佈本身由你的技能/姿勢/呼吸決定。
+## 致謝與授權
 
----
-
-## 二、種群數量與珍稀度控制
-
-**先關閉遊戲**（遊戲退出時會重寫種群存檔）。
-
-```bat
-cotwmod pop reserves                  # 列出保護區代碼
-cotwmod pop species hirsch            # 列出某保護區的物種代碼（標示可出巨獸的物種）
-cotwmod pop show hirsch               # 目前的數量、公母、鑽石、巨獸、稀有毛色統計
-cotwmod pop apply my_profile.yaml --dry-run   # 試跑，不寫入存檔
-cotwmod pop apply my_profile.yaml     # 套用（自動備份）
-cotwmod pop restore hirsch            # 還原到第一次修改前的原始存檔
-```
-
-配置檔範例 [config/population_profile.example.yaml](config/population_profile.example.yaml)：
-
-```yaml
-reserves:
-  hirsch:
-    red_deer:
-      males: "+20"          # +N 增加 / -N 減少 / =N 設定為 N 隻
-      to_males: 10%         # 10% 母鹿轉為公鹿
-      rare_furs: 15%        # 稀有毛色
-      diamonds: 8           # 鑽石：數量、百分比或 all
-      diamond_rare_furs: true
-      great_ones: 2         # 巨獸
-```
-
-執行順序固定為：數量 → 性別 → 稀有毛色 → 鑽石 → 巨獸，後面的步驟不會被前面覆蓋。
-備份位置：`%USERPROFILE%\.cotwmod\backups\`（`original\` 是第一次修改前的原檔，永不覆蓋）。
-
-已知限制（繼承自遊戲/APC）：每個動物群組最多 30 隻；使用 TruRACS 新評分系統的部分物種鑽石生成可能不穩定；新地圖需等 APC 更新物種資料（`git submodule update --remote`）。
-
----
-
-## 專案結構
-
-```
-cotwmod/
-  ballistics/solver.py       彈道求解（RK4、阻力、風、坡度、歸零）
-  ballistics/projection.py   角度 ↔ 螢幕像素（FOV、倍率）
-  ballistics/calibration.py  Levenberg–Marquardt 參數擬合
-  game/memory.py             唯讀記憶體讀取（指標鏈 / AOB）
-  game/aim.py                合併手動與實時輸入，計算落點
-  overlay/overlay.py         透明疊加層 + 全局熱鍵
-  population/profile.py      種群配置檔解析與驗證
-  population/apply.py        基於 APC 套用、備份、還原
-config/                      武器、設定、位址、校準結果
-third_party/apc              APC（子模組）
-tests/                       pytest
-```
-
-開發：`pip install -e .[dev]` 然後 `pytest`。
-
-## 授權
-
-MIT。`third_party/apc` 屬於其原作者（MIT）。
+MIT。種群存檔格式與物種/毛色資料來自 [APC – Animal Population Changer Revived](https://github.com/RyMaxim/apc)（Ryan Maxim，MIT）及 [deca](https://github.com/kk49/deca)（Krzysztof Kamieniecki，MIT），以 git 子模組放在 `third_party/apc`；毛色種子演算法由 xpltive / 0xSthSth1337 破解。物種中文名稱取自 APC 的簡體中文翻譯，可能與遊戲官方譯名略有不同。

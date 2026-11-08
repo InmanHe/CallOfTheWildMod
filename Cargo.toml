@@ -1,0 +1,48 @@
+[package]
+name = "cotwmod"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+description = "theHunter: Call of the Wild helper: predicted-impact bow/crossbow sight, memory scanner, population editor"
+
+[lib]
+name = "cotwmod"
+path = "src/lib.rs"
+
+[[bin]]
+name = "CotwMod"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+indexmap = { version = "2", features = ["serde"] }
+flate2 = "1"
+rand = "0.8"
+anyhow = "1"
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "x11"] }
+egui_extras = { version = "0.31", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_Threading",
+  "Win32_System_Memory",
+  "Win32_System_ProcessStatus",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_System_Com",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+panic = "abort"
+
+[profile.dev.package."*"]
+opt-level = 2

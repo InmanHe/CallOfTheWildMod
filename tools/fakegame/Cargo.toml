@@ -1,0 +1,10 @@
+[package]
+name = "theHunterCotW_F"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "theHunterCotW_F"
+path = "src/main.rs"
+
+[workspace]
