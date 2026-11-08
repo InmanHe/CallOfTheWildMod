@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+config/calibrated.json
+config/calibration_shots.json
+config/*.tmp

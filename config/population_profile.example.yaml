@@ -1,0 +1,29 @@
+# 種群配置示例 / Population profile example
+# 用法: cotwmod pop apply config/population_profile.example.yaml
+#
+# 保護區代碼: cotwmod pop reserves      物種代碼: cotwmod pop species <保護區>
+#
+# 數量 (males / females):  "+N" 增加   "-N" 減少   "=N" 設為 N 隻
+# 比例/數量 (其他欄位):      N 隻   "N%" 百分比   all 全部
+#
+# 執行順序固定: 數量 -> 性別轉換 -> 稀有毛色 -> 鑽石 -> 巨獸(Great One)
+# 注意: 每個群組最多 30 隻（遊戲限制），增加過多時會自動停在上限。
+
+reserves:
+  hirsch:                      # Hirschfelden
+    red_deer:
+      males: "+20"
+      to_males: 10%            # 10% 母鹿轉公鹿
+      rare_furs: 15%
+      diamonds: 8
+      diamond_rare_furs: true  # 鑽石同時給稀有毛色
+    fallow_deer:
+      great_ones: 2
+      diamonds: 5%
+
+  layton:                      # Layton Lake District
+    moose:
+      males: "=40"             # 公駝鹿總數設為 40
+      great_ones: 1
+    black_bear:
+      diamonds: 3

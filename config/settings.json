@@ -1,0 +1,51 @@
+{
+  "screen": {
+    "_comment": "Run the game in Borderless/Windowed mode - overlays cannot draw over exclusive fullscreen.",
+    "width": 1920,
+    "height": 1080,
+    "fov_deg": 75.0,
+    "fov_is_horizontal": false,
+    "aim_reference_px": [0, 0],
+    "px_per_mrad_override": null
+  },
+  "input": {
+    "_comment": "memory = read live values via config/offsets.json (falls back to manual per field); manual = hotkeys only",
+    "mode": "memory",
+    "poll_hz": 30,
+    "wind_levels_ms": [0.0, 1.5, 3.5, 6.0, 9.0]
+  },
+  "startup": {
+    "weapon": "hawkedge_cb70",
+    "ammo": "arrow_420gr",
+    "zero": 40,
+    "distance": 30.0,
+    "magnification_index": 0
+  },
+  "overlay": {
+    "marker_color": "#33FF66",
+    "marker_radius_px": 6,
+    "show_info_panel": true,
+    "show_zero_reference": true,
+    "show_trajectory_ladder": true,
+    "ladder_distances": [10, 20, 30, 40, 50, 60, 70, 80]
+  },
+  "hotkeys": {
+    "_comment": "pynput key names. Global hotkeys - they work while the game has focus.",
+    "toggle_overlay": "f6",
+    "next_weapon": "f7",
+    "next_ammo": "f8",
+    "next_zero": "f9",
+    "next_magnification": "f10",
+    "distance_plus_1": "page_up",
+    "distance_minus_1": "page_down",
+    "distance_plus_5": "home",
+    "distance_minus_5": "end",
+    "wind_dir_cw": "right",
+    "wind_dir_ccw": "left",
+    "wind_level_up": "up",
+    "wind_level_down": "down",
+    "hotkey_modifier": "alt_l",
+    "calib_record": "insert",
+    "calib_marker_mode": "f11"
+  }
+}
