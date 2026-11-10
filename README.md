@@ -15,7 +15,7 @@
 | 🎯 **落點瞄具（任何武器、自動更新）** | 啟動時**直接讀取你電腦上安裝的遊戲檔案**（唯讀），取得當前版本全部武器與彈藥的彈道數據：動能、彈頭質量、直徑、阻力係數、重力，以及遊戲在每個歸零檔位對每種彈藥的**實際發射角**。新 DLC 槍械自動出現，遊戲更新後自動重新讀取。手上拿什麼武器，就按它的歸零、風、自身下墜算出落點。 |
 | 🔄 **動態自動校準** | 啟動時用當前遊戲版本**全部武器的歸零表**自動擬合引擎常數，不必開槍；在靶場每記錄一發射擊，就在背景自動重新擬合。 |
 | 🦌 **種群編輯器** | 可視化修改每個保護區、每個物種的公/母數量、性別轉換、稀有毛色、鑽石、巨獸；逐隻改毛色、等級、性別。自動備份、一鍵還原。 |
-| 🔫 **手持武器自動識別** | 「落點瞄具」頁點「開始自動識別」，按提示在遊戲裡切換幾次武器並按 Alt+F12，其餘（掃描、縮小範圍、指針掃描、綁定）全自動；之後切換武器時瞄具即時跟著換。 |
+| 🚀 **快速開始（一鍵設定）** | 開啟後的第一頁是檢查清單。點「一鍵設置」，照遊戲畫面上方的黃色提示做幾個動作（換武器、調歸零、抬頭/低頭、開鏡/收鏡），每做完一步按 Alt+F12；手持武器、歸零檔位、鏡頭俯仰、鏡頭視角、測距距離就會自動找到並永久綁定。只需做一次。 |
 | 🔍 **內存掃描器** | 類 Cheat Engine 的數值掃描與指針掃描，綁定手持武器、彈藥、歸零檔位、距離、俯仰、朝向、風、FOV，讓瞄具全自動。 |
 | 👁 **獵物可視距離** | 綁定地址後 400–800 m 可調並持續鎖定。 |
 
@@ -51,7 +51,7 @@
 | Alt+PgUp / PgDn, Alt+Home / End | 距離 ±1 / ±5 m |
 | Alt+← / → , Alt+↑ / ↓ | 風來向 / 風力（校準模式下移動紅框） |
 | Alt+F11 / Alt+Insert | 校準模式 / 記錄一發 |
-| Alt+F12 | 自動識別手持武器時：「我已切換武器」 |
+| Alt+F12 | 設定引導：「我做好了，下一步」 |
 
 ### 種群編輯器
 
@@ -74,7 +74,7 @@ A single-player helper for *theHunter: Call of the Wild*. Written in Rust, one `
 | 🎯 **Impact sight for any weapon, always current** | At start-up it **reads the game installed on your PC** (read-only) to get the ballistic data of every weapon and ammo in your game version: kinetic energy, mass, diameter, drag coefficient, gravity, and the **actual launch angle** the game uses for every zero setting and ammo. New DLC guns appear automatically, and the data is re-read after game updates. Whatever you hold, the overlay shows where the shot will land given the zero, wind and the weapon's own drop. |
 | 🔄 **Dynamic auto-calibration** | At start-up the engine constants are fitted automatically to **the zero tables of every weapon** in your game version, with no shooting needed. Every shot you record at a range triggers a background refit. |
 | 🦌 **Population editor** | Edit male/female counts, gender ratio, rare furs, diamonds and Great Ones per reserve and species, or edit single animals. Automatic backups, one-click restore. |
-| 🔫 **Held-weapon auto-detection** | On the Impact sight tab click **Start detection**, then switch weapons in game a few times and press Alt+F12 when asked. Scanning, narrowing, pointer scan and binding are automatic; from then on the sight follows your weapon switches in real time. |
+| 🚀 **Quick start (one-button setup)** | The first page is a checklist. Click **Set up everything that is missing** and follow the yellow prompt shown at the top of the game (switch weapon, change zero, look up/down, scope in/out), pressing Alt+F12 after each step. Held weapon, zero level, camera pitch, camera FOV and rangefinder distance are found and bound permanently. Needed only once. |
 | 🔍 **Memory scanner** | Cheat-Engine-style value and pointer scanning. Bind the held weapon, ammo, zero setting, distance, pitch, yaw, wind and FOV so the sight runs fully automatically. |
 | 👁 **Animal view distance** | Once its address is bound, adjust from 400 to 800 m and keep it locked. |
 
@@ -110,7 +110,7 @@ The game adds random dispersion, sway and heart-rate effects to every shot by de
 | Alt+PgUp / PgDn, Alt+Home / End | Distance ±1 / ±5 m |
 | Alt+← / →, Alt+↑ / ↓ | Wind direction / strength (move the red box in calibration mode) |
 | Alt+F11 / Alt+Insert | Calibration mode / record a shot |
-| Alt+F12 | During held-weapon detection: "I switched weapons" |
+| Alt+F12 | Setup guide: "done, next step" |
 
 ### Population editor
 

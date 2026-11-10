@@ -23,6 +23,7 @@ use std::time::Instant;
 
 #[derive(PartialEq, Clone, Copy)]
 enum Tab {
+    Home,
     Population,
     Sight,
     Memory,
@@ -35,7 +36,8 @@ pub struct App {
     pub live: LiveValues,
     pub calib: Calib,
     pub ov: Arc<Mutex<OverlayShared>>,
-    pub wizard: wizard::Wizard,
+    pub wizard: cotwmod::guide::Guide,
+    pub guide_value: String,
     pub status: String,
     last_save: Instant,
     dirty: bool,
@@ -81,12 +83,13 @@ impl App {
             pop: pop_tab::PopState::new(&s),
             mem: mem_tab::MemState::default(),
             s,
-            tab: Tab::Population,
+            tab: Tab::Home,
             shared,
             live: LiveValues::default(),
             calib: Calib::default(),
             ov,
-            wizard: wizard::Wizard::default(),
+            wizard: Default::default(),
+            guide_value: String::new(),
             status: String::new(),
             last_save: Instant::now(),
             dirty: false,
@@ -189,7 +192,7 @@ impl App {
             match e {
                 Event::Action(Action::WeaponSwitched) => {
                     let p = self.shared.lock().unwrap().process.clone();
-                    self.wizard.on_switch(p);
+                    self.wizard.confirm(p, None);
                 }
                 Event::Action(a) => {
                     aim::apply_action(&mut self.s, &mut self.calib, a);
@@ -214,15 +217,20 @@ impl App {
         o.settings = self.s.clone();
         o.calib = self.calib;
         o.status = self.status.clone();
+        o.prompt = self.wizard.prompt().map(|(zh, en)| if self.s.lang == Lang::Zh { zh } else { en }).unwrap_or_default();
     }
 
     fn tick_wizard(&mut self) {
         let p = self.shared.lock().unwrap().process.clone();
-        if let Some(b) = self.wizard.tick(p) {
-            self.s.bindings.insert(Field::WeaponId, vec![b]);
+        if let Some((field, b)) = self.wizard.tick(p) {
+            self.s.bindings.insert(field, vec![b]);
+            self.s.use_live = true;
+            if field == Field::WeaponId {
+                self.s.auto_weapon = true;
+            }
             self.sync_shared();
-            self.dirty = true;
-            self.status = self.t("手持武器已自动绑定", "Held weapon bound automatically").into();
+            self.s.save();
+            self.status = format!("{}: {}", self.t("已自动绑定", "Bound automatically"), field.key());
         }
     }
 }
@@ -241,7 +249,7 @@ impl eframe::App for App {
             ui.horizontal(|ui| {
                 ui.heading("CotwMod");
                 ui.separator();
-                for (t, zh, en) in [(Tab::Population, "种群编辑", "Population"), (Tab::Sight, "落点瞄具", "Impact sight"), (Tab::Memory, "内存扫描", "Memory")] {
+                for (t, zh, en) in [(Tab::Home, "快速开始", "Quick start"), (Tab::Population, "种群编辑", "Population"), (Tab::Sight, "落点瞄具", "Impact sight"), (Tab::Memory, "内存扫描", "Memory")] {
                     if ui.selectable_label(self.tab == t, tr(self.s.lang, zh, en)).clicked() {
                         self.tab = t;
                     }
@@ -274,6 +282,7 @@ impl eframe::App for App {
             ui.label(&self.status);
         });
         egui::CentralPanel::default().show(ctx, |ui| match self.tab {
+            Tab::Home => wizard::ui(self, ui),
             Tab::Population => pop_tab::ui(self, ui),
             Tab::Sight => sight_tab::ui(self, ui),
             Tab::Memory => mem_tab::ui(self, ui),

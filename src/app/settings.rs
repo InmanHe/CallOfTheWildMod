@@ -76,7 +76,7 @@ impl Default for Settings {
             auto_resolution: true,
             camera: Camera { screen_w: 1920.0, screen_h: 1080.0, fov_deg: 75.0, fov_horizontal: false, magnification: 1.0, px_per_mrad: 0.0 },
             aim_ref: [0.0, 0.0],
-            overlay_on: false,
+            overlay_on: true,
             show_ladder: true,
             marker_rgb: [0x33, 0xFF, 0x66],
             marker_radius: 6.0,

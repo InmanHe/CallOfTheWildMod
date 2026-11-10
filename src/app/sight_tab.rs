@@ -135,7 +135,7 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
             }
 
             ui.separator();
-            super::wizard::ui(app, ui);
+            ui.label(RichText::new(t("自动读取手持武器 / 归零 / 俯仰 / 视角 / 距离：在“快速开始”页一键设置。", "Held weapon / zero / pitch / FOV / distance are set up on the Quick start page.")).small());
             ui.separator();
             ui.heading(t("输入", "Inputs"));
             changed |= ui.checkbox(&mut app.s.use_live, t("使用内存实时数据", "Use live memory values")).changed();
@@ -305,7 +305,7 @@ pub fn ui(app: &mut App, ui: &mut egui::Ui) {
             });
             ui.collapsing(t("热键", "Hotkeys"), |ui| {
                 for (_, k, a) in KEYS {
-                    ui.label(format!("{k:12}  {a:?}"));
+                    ui.label(format!("{k:12}  {}", t(a.describe().0, a.describe().1)));
                 }
             });
         });

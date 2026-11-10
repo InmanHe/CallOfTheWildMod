@@ -21,6 +21,8 @@ pub struct OverlayShared {
     pub settings: Settings,
     pub calib: Calib,
     pub status: String,
+    /// guided-setup instruction, drawn large at the top of the game
+    pub prompt: String,
     pub events: Vec<Event>,
     pub stop: bool,
     /// show even when the game is not the foreground window
@@ -30,7 +32,7 @@ pub struct OverlayShared {
 
 impl OverlayShared {
     pub fn new(s: Settings) -> Self {
-        OverlayShared { settings: s, calib: Calib::default(), status: String::new(), events: vec![], stop: false, always_show: false, visible_now: false }
+        OverlayShared { settings: s, calib: Calib::default(), status: String::new(), prompt: String::new(), events: vec![], stop: false, always_show: false, visible_now: false }
     }
 }
 
@@ -55,9 +57,17 @@ fn rgb(r: u8, g: u8, b: u8) -> u32 {
 
 const KEY: u32 = 0x00FF00FF; // magenta = transparent
 
-fn build(s: &Settings, live: &LiveValues, calib: &Calib, status: &str, w: i32, h: i32) -> Vec<Shape> {
+fn build(s: &Settings, live: &LiveValues, calib: &Calib, status: &str, prompt: &str, w: i32, h: i32) -> Vec<Shape> {
     let lang = s.lang;
     let mut v = vec![];
+    if !prompt.is_empty() {
+        // rough centring: CJK glyphs are about twice as wide as ASCII
+        let px: i32 = prompt.chars().map(|c| if c.is_ascii() { 8 } else { 15 }).sum();
+        let x = ((w - px) / 2).max(8);
+        let y = h / 6;
+        v.push(Shape::Rect(x - 10, y - 8, x + px + 10, y + 28, rgb(255, 220, 0), 2));
+        v.push(Shape::Text(x, y, prompt.to_string(), rgb(255, 230, 40)));
+    }
     let (cx, cy) = (w / 2, h / 2);
     let white = rgb(235, 235, 235);
     v.push(Shape::Line(cx - 4, cy, cx + 5, cy, white, 1));
@@ -172,7 +182,7 @@ unsafe fn run(live: Arc<Mutex<Shared>>, ov: Arc<Mutex<OverlayShared>>) {
             DispatchMessageW(&msg);
         }
         let lv = live.lock().unwrap().out.clone();
-        let (s, calib, status, visible) = {
+        let (s, calib, status, prompt, visible) = {
             let mut o = ov.lock().unwrap();
             if o.stop {
                 break;
@@ -195,9 +205,9 @@ unsafe fn run(live: Arc<Mutex<Shared>>, ov: Arc<Mutex<OverlayShared>>) {
                 o.events.push(Event::Weapon { weapon: s.weapon.clone(), ammo: s.ammo.clone(), zero_index: s.zero_index });
                 o.settings = s.clone();
             }
-            let visible = s.overlay_on && lv.window.is_some() && (lv.foreground || o.always_show);
+            let visible = (s.overlay_on || !o.prompt.is_empty()) && lv.window.is_some() && (lv.foreground || o.always_show);
             o.visible_now = visible;
-            (s, o.calib, o.status.clone(), visible)
+            (s, o.calib, o.status.clone(), o.prompt.clone(), visible)
         };
         if !visible {
             if shown {
@@ -215,7 +225,7 @@ unsafe fn run(live: Arc<Mutex<Shared>>, ov: Arc<Mutex<OverlayShared>>) {
             last_shapes.clear();
         }
         let (w, h) = (rect[2], rect[3]);
-        let shapes = build(&s, &lv, &calib, &status, w, h);
+        let shapes = build(&s, &lv, &calib, &status, &prompt, w, h);
         if shapes != last_shapes {
             let wdc = GetDC(hwnd);
             if bmp_size != (w, h) {

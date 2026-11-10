@@ -69,3 +69,26 @@ impl Hotkeys {
         out
     }
 }
+
+impl Action {
+    pub fn describe(self) -> (&'static str, &'static str) {
+        match self {
+            Action::ToggleOverlay => ("开关落点瞄具", "toggle the impact sight"),
+            Action::NextWeapon => ("手动切换武器（最近使用）", "next weapon (recent list)"),
+            Action::NextAmmo => ("切换弹药 / 箭矢", "next ammo / arrow"),
+            Action::NextZero => ("切换归零档位", "next zero level"),
+            Action::NextMag => ("切换瞄具倍率", "next scope magnification"),
+            Action::DistPlus1 => ("距离 +1 m", "distance +1 m"),
+            Action::DistMinus1 => ("距离 −1 m", "distance −1 m"),
+            Action::DistPlus5 => ("距离 +5 m", "distance +5 m"),
+            Action::DistMinus5 => ("距离 −5 m", "distance −5 m"),
+            Action::WindCw => ("风向顺时针 45°", "wind direction +45°"),
+            Action::WindCcw => ("风向逆时针 45°", "wind direction −45°"),
+            Action::WindUp => ("风力加一级", "wind stronger"),
+            Action::WindDown => ("风力减一级", "wind weaker"),
+            Action::CalibMode => ("进入 / 退出校准", "calibration mode on / off"),
+            Action::CalibRecord => ("记录校准射击", "record calibration shot"),
+            Action::WeaponSwitched => ("设置向导：我做好了", "setup guide: done, next step"),
+        }
+    }
+}

@@ -1,21 +1,35 @@
-# CotwMod v0.5.0
+# CotwMod v0.6.0
 
 ## 中文
 
-- **疊加層重寫**：改為原生 Win32 透明視窗（色鍵透明、滑鼠穿透、置頂），自動貼合遊戲畫面。修正舊版開啟疊加層後遊戲畫面被擋住的問題。只在遊戲處於前台時顯示。
-- **自動讀取遊戲解析度**：直接取用遊戲視窗的實際畫面大小，視窗大小或解析度改變時即時跟隨。
-- **手持武器自動識別精靈**：點「開始自動識別」，按提示切換幾次武器並按 Alt+F12。掃描、縮小範圍、指針掃描、綁定全部自動完成。如果內存中的 ID 是遊戲裝備哈希，會直接認出是哪把武器；否則每把武器只需「記住」一次。
-- **即時更新**：疊加層、熱鍵、手持武器追蹤移到獨立執行緒（約 30 次/秒），換武器即時生效，主視窗最小化也照常運作。
-- 新熱鍵 Alt+F12（自動識別時的「我已切換武器」）。
+- **新的「快速開始」首頁**：一張檢查清單加一個按鈕。遊戲是否連上、彈道數據是否讀到、瞄具是否開啟、哪些數值已自動讀取，一眼看完。
+- **一鍵設定引導**：不再需要自己用內存掃描找數值。點「一鍵設置」，照提示在遊戲裡做動作並按 Alt+F12：
+  - 手持武器：換幾次武器
+  - 歸零檔位：調到最低檔，再逐檔調高
+  - 鏡頭俯仰：抬頭到頂、低頭到底（自動判斷弧度/角度和正負方向）
+  - 鏡頭視角：開鏡、收鏡（自動選出與你設定的 FOV 相符的那個）
+  - 測距距離：用測距儀量 2–4 個目標，輸入顯示的數字
+  掃描、篩選、驗證、指針掃描、綁定、存檔全部自動，結果在遊戲重啟後仍有效。
+- **提示直接顯示在遊戲畫面上**：引導時不用切回 CotwMod 視窗（測距那一步除外）。
+- 疊加層預設開啟；熱鍵清單改為中英文說明。
 
-**已驗證（Windows 版在 Wine 下）**：疊加層透明顯示在模擬遊戲視窗上，並正確置中；解析度讀取正確；自動識別精靈 3 輪內找到手持武器並綁定指針鏈；在遊戲內換武器後約 1 秒，瞄具自動切換到新武器。**尚未在真實遊戲中運行過。**
+**仍需手動的部分**：風向和風力（遊戲 HUD 沒有數字可供自動驗證，用 Alt+方向鍵設定）；動物可視距離（在「內存掃描」頁，方法見 docs/MEMORY_GUIDE.md）。XeSS/DLSS 無法對這款遊戲強制開啟，本工具不處理畫面升頻。
+
+**已驗證**：引導的五個項目在模擬進程上全部綁定到正確位址（自動化測試，含干擾數值、反向俯仰、水平 FOV 等誘餌）；Windows 版在 Wine 下完成手持武器引導並在模擬遊戲視窗上顯示提示。**尚未在真實遊戲中運行過**——某一項失敗時重新設置該項即可，其餘手動方式仍然保留。
 
 ## English
 
-- **Overlay rewritten** as a native Win32 transparent window (colour-key transparency, click-through, topmost) fitted to the game view. Fixes the old overlay hiding the game. Shown only while the game is in front.
-- **Game resolution read automatically** from the game window and followed live when the window or resolution changes.
-- **Held-weapon auto-detection wizard**: click **Start detection**, then switch weapons a few times and press Alt+F12 when asked. Scanning, narrowing, pointer scan and binding are automatic. If the in-memory ID is a game equipment hash the weapon is recognised directly; otherwise each weapon is remembered once.
-- **Real-time updates**: overlay, hotkeys and held-weapon tracking run on their own thread (~30 Hz), so weapon switches apply immediately, even with the main window minimised.
-- New hotkey Alt+F12 ("I switched weapons" during detection).
+- **New Quick start home page**: one checklist and one button. Shows at a glance whether the game is attached, ballistic data is loaded, the sight is on, and which values are read automatically.
+- **One-button guided setup**: no more manual memory scanning. Click **Set up everything that is missing**, then do what the prompt says in game and press Alt+F12:
+  - Held weapon: switch weapons a few times
+  - Zero level: lowest level, then one level up at a time
+  - Camera pitch: look fully up, fully down (radians/degrees and sign are detected)
+  - Camera FOV: scope in, scope out (the candidate matching your configured FOV is chosen)
+  - Range distance: range 2–4 targets and type the number shown
+  Scanning, filtering, verification, pointer scan, binding and saving are automatic and survive game restarts.
+- **Prompts are drawn on the game screen**, so you stay in the game during setup (except for typing distances).
+- Overlay is on by default; the hotkey list now has proper descriptions.
 
-**Verified (Windows build under Wine)**: the overlay is drawn transparently over a mock game window and correctly centred; resolution is read correctly; the wizard found the held weapon in 3 rounds and bound a pointer chain; after a weapon switch in the mock game the sight changed weapon within about 1 second. **Not yet run against the real game.**
+**Still manual**: wind direction and strength (the HUD shows no number to verify against; use Alt+arrow keys) and animal view distance (Memory tab, see docs/MEMORY_GUIDE.md). XeSS/DLSS cannot be forced on in this game; this tool does not do upscaling.
+
+**Verified**: all five guided tasks bind the correct address on a simulated process (automated test with noise values and decoys such as inverted pitch and horizontal FOV); the Windows build completed the held-weapon guide under Wine and showed the prompt over a mock game window. **Not yet run against the real game** — if a step fails, redo that step; the manual methods remain available.
